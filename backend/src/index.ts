@@ -17,7 +17,7 @@ app.use("/conversations", conversationsRouter);
 app.use("/video", videoRouter);
 
 const httpServer = createServer(app);
-createWsServer(httpServer);
+app.set("io", createWsServer(httpServer));
 
 const port = Number(process.env.PORT) || 4000;
 httpServer.listen(port, () => {

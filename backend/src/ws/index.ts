@@ -30,6 +30,7 @@ export function createWsServer(httpServer: HttpServer) {
 
   io.on("connection", (socket) => {
     const userId: string = socket.data.userId;
+    socket.join(`user:${userId}`);
 
     if (!onlineUsers.has(userId)) onlineUsers.set(userId, new Set());
     onlineUsers.get(userId)!.add(socket.id);

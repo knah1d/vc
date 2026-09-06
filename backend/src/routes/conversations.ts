@@ -32,6 +32,7 @@ conversationsRouter.post("/", async (req: AuthedRequest, res) => {
     update: {},
     create: { userAId, userBId },
   });
+  req.app.get("io")?.to(`user:${other.id}`).emit("conversation:new", { conversationId: conversation.id });
   res.status(201).json({ conversation });
 });
 

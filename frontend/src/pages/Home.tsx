@@ -25,8 +25,6 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(getSocket().connected);
   const emailRef = useRef<HTMLInputElement>(null);
-  const activeIdRef = useRef<string | null>(null);
-  activeIdRef.current = activeId;
   const calls = useCalls();
 
   async function refreshConversations() {
