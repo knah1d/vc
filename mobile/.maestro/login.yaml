@@ -1,0 +1,15 @@
+# Logs into a pre-seeded test account and confirms it lands on the chat list.
+# Sign up that account once by hand (or via a setup script) before running this.
+#
+# Run with:
+#   maestro test .maestro/login.yaml -e TEST_EMAIL=you@example.com -e TEST_PASSWORD=testpassword123
+appId: com.hush.mobile
+---
+- launchApp
+- tapOn: "Email address"
+- inputText: ${TEST_EMAIL}
+- tapOn: "Enter your password"
+- inputText: ${TEST_PASSWORD}
+- hideKeyboard
+- tapOn: "Log in"
+- assertVisible: "Log out"

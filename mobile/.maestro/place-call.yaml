@@ -1,0 +1,27 @@
+# Confirms the call-initiation pipeline runs (permission check → call:invite)
+# by tapping the voice-call button and expecting either the native mic/camera
+# permission prompt or the in-app ringing UI to appear.
+#
+# NOTE: the exact permission-dialog button text/flow is Android-version and
+# OEM specific (e.g. "While using the app" vs "Only this time" vs no prompt at
+# all if already granted) — this is exactly the kind of thing that needs a
+# real-device pass to get right per device, not something to trust blindly.
+# Adjust the optional tapOn below to match your test device.
+#
+# Run with:
+#   maestro test .maestro/place-call.yaml \
+#     -e TEST_EMAIL=you@example.com -e TEST_PASSWORD=testpassword123 \
+#     -e TEST_CONTACT_EMAIL=contact@example.com
+appId: com.hush.mobile
+---
+- runFlow: login.yaml
+- tapOn: "Start a chat by email"
+- inputText: ${TEST_CONTACT_EMAIL}
+- tapOn: "Start"
+- tapOn:
+    id: "call-voice"
+- optional:
+    - tapOn: "While using the app"
+- assertVisible:
+    text: "Ringing.*|Connecting.*|Getting your call ready.*|offline.*"
+    timeout: 10000

@@ -4,6 +4,7 @@ import { verifyToken } from "../lib/auth.js";
 import { prisma } from "../lib/prisma.js";
 import { z } from "zod";
 import { calls, setCallEmitter, livekitConfig } from "../lib/calls.js";
+import { pushToUser } from "../lib/push.js";
 
 // userId -> connected socket ids (a user could have multiple tabs open)
 const onlineUsers = new Map<string, Set<string>>();
@@ -37,20 +38,43 @@ export function createWsServer(httpServer: HttpServer) {
     socket.broadcast.emit("presence:online", { userId });
 
     // --- Messaging ---
-    socket.on("message:send", async ({ conversationId, body }, ack) => {
-      const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } });
-      if (!conversation || (conversation.userAId !== userId && conversation.userBId !== userId)) {
-        return ack?.({ error: "Conversation not found" });
-      }
-      const message = await prisma.message.create({
-        data: { conversationId, senderId: userId, body },
-      });
+    socket.on("message:send", async (payload, ack) => {
+      const reply = typeof ack === "function" ? ack : () => {};
+      try {
+        const { conversationId, body, clientId } = z
+          .object({ conversationId: z.string().min(1), body: z.string().min(1), clientId: z.string().min(1).optional() })
+          .parse(payload);
 
-      const otherId = conversation.userAId === userId ? conversation.userBId : conversation.userAId;
-      for (const socketId of onlineUsers.get(otherId) ?? []) {
-        io.to(socketId).emit("message:new", { message });
+        const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } });
+        if (!conversation || (conversation.userAId !== userId && conversation.userBId !== userId)) {
+          return reply({ error: "Conversation not found" });
+        }
+
+        // A resend (e.g. a mobile client retrying after a dropped ack) carries
+        // the same clientId — recognize it instead of creating a duplicate.
+        const existing = clientId ? await prisma.message.findUnique({ where: { clientId } }) : null;
+        const message = existing ?? (await prisma.message.create({ data: { conversationId, senderId: userId, body, clientId } }));
+
+        if (!existing) {
+          const otherId = conversation.userAId === userId ? conversation.userBId : conversation.userAId;
+          const otherSockets = onlineUsers.get(otherId) ?? new Set<string>();
+          for (const socketId of otherSockets) {
+            io.to(socketId).emit("message:new", { message });
+          }
+          if (otherSockets.size === 0) {
+            const sender = await prisma.user.findUnique({ where: { id: userId }, select: { displayName: true } });
+            void pushToUser(otherId, {
+              title: sender?.displayName ?? "New message",
+              body: body.length > 120 ? `${body.slice(0, 117)}...` : body,
+              sound: "default",
+              data: { type: "message:new", conversationId },
+            });
+          }
+        }
+        reply({ message });
+      } catch (error) {
+        reply({ error: error instanceof z.ZodError ? "Invalid message." : "Could not send the message." });
       }
-      ack?.({ message });
     });
 
     socket.on("typing", async ({ conversationId, isTyping }) => {
@@ -72,8 +96,28 @@ export function createWsServer(httpServer: HttpServer) {
         if (!conversation || ![conversation.userAId, conversation.userBId].includes(userId)) throw new Error("Conversation not found.");
         const calleeId = conversation.userAId === userId ? conversation.userBId : conversation.userAId;
         if (!socket.connected) return;
-        if (!onlineUsers.get(calleeId)?.size) throw new Error("This person is offline. Try again when they're connected.");
-        reply({ call: calls.invite({ conversationId, callerId: userId, calleeId, callerSocketId: socket.id, mode }) });
+
+        const calleeOnline = Boolean(onlineUsers.get(calleeId)?.size);
+        if (!calleeOnline) {
+          const hasDevice = (await prisma.deviceToken.count({ where: { userId: calleeId } })) > 0;
+          if (!hasDevice) throw new Error("This person is offline. Try again when they're connected.");
+        }
+
+        const call = calls.invite({ conversationId, callerId: userId, calleeId, callerSocketId: socket.id, mode });
+        reply({ call });
+
+        // The socket-based call:incoming above only reaches an open app. A
+        // backgrounded or killed one needs a push to know to ring at all.
+        if (!calleeOnline) {
+          const caller = await prisma.user.findUnique({ where: { id: userId }, select: { displayName: true } });
+          void pushToUser(calleeId, {
+            title: `Incoming ${mode} call`,
+            body: caller ? `${caller.displayName} is calling…` : "Someone is calling…",
+            sound: "default",
+            priority: "high",
+            data: { type: "call:incoming", ...call },
+          });
+        }
       } catch (error) {
         reply({ error: error instanceof z.ZodError ? "Invalid call request." : error instanceof Error ? error.message : "Could not start the call." });
       }

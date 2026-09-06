@@ -4,6 +4,7 @@ import cors from "cors";
 import { createServer } from "http";
 import { authRouter } from "./routes/auth.js";
 import { conversationsRouter } from "./routes/conversations.js";
+import { devicesRouter } from "./routes/devices.js";
 import { videoRouter } from "./routes/video.js";
 import { createWsServer } from "./ws/index.js";
 
@@ -15,6 +16,7 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 app.use("/auth", authRouter);
 app.use("/conversations", conversationsRouter);
 app.use("/video", videoRouter);
+app.use("/devices", devicesRouter);
 
 const httpServer = createServer(app);
 app.set("io", createWsServer(httpServer));

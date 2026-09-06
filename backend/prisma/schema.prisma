@@ -20,6 +20,22 @@ model User {
   conversationsB   Conversation[] @relation("ConversationUserB")
   callsAsCaller    Call[] @relation("CallCaller")
   callsAsCallee    Call[] @relation("CallCallee")
+  deviceTokens     DeviceToken[]
+}
+
+// One row per device that has registered for push (e.g. an Expo push token
+// from the mobile app). Lets the backend reach a user who has no live
+// socket connection — a backgrounded or killed app — for things like an
+// incoming call ring or a new message.
+model DeviceToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  token     String   @unique
+  platform  String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Conversation {
@@ -45,6 +61,10 @@ model Message {
   body           String
   createdAt      DateTime     @default(now())
   readAt         DateTime?
+  // Client-generated id from the sending device's local outbox. Lets a retried
+  // send (e.g. after a dropped ack on a flaky mobile connection) be recognized
+  // as the same message instead of creating a duplicate.
+  clientId       String?      @unique
 
   @@index([conversationId, createdAt])
 }

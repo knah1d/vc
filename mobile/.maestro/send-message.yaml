@@ -1,0 +1,19 @@
+# Starts (or reopens) a conversation with a second pre-seeded test account and
+# sends a message, confirming it renders in the thread. Does not verify the
+# other side actually receives it — that needs two devices/emulators running
+# this flow's counterpart concurrently, which is a follow-up, not covered here.
+#
+# Run with:
+#   maestro test .maestro/send-message.yaml \
+#     -e TEST_EMAIL=you@example.com -e TEST_PASSWORD=testpassword123 \
+#     -e TEST_CONTACT_EMAIL=contact@example.com
+appId: com.hush.mobile
+---
+- runFlow: login.yaml
+- tapOn: "Start a chat by email"
+- inputText: ${TEST_CONTACT_EMAIL}
+- tapOn: "Start"
+- tapOn: "Type a message"
+- inputText: "Hello from Maestro"
+- tapOn: "Send"
+- assertVisible: "Hello from Maestro"
