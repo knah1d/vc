@@ -1,37 +1,25 @@
 import { Router } from "express";
 import { AccessToken } from "livekit-server-sdk";
-import { prisma } from "../lib/prisma.js";
 import { requireAuth, type AuthedRequest } from "../lib/auth.js";
+import { calls, livekitConfig } from "../lib/calls.js";
 
 export const videoRouter = Router();
 videoRouter.use(requireAuth);
 
-// Issue a LiveKit room token for a given conversation. Room name = conversationId,
-// so both participants join the same 1:1 room. Called after the callee accepts.
+videoRouter.get("/status", (_req, res) => res.json({ configured: Boolean(livekitConfig()) }));
+
 videoRouter.post("/token/:conversationId", async (req: AuthedRequest, res) => {
-  const conversation = await prisma.conversation.findUnique({
-    where: { id: req.params.conversationId },
-  });
-  if (!conversation || (conversation.userAId !== req.userId && conversation.userBId !== req.userId)) {
-    return res.status(404).json({ error: "Conversation not found" });
+  try {
+    const config = livekitConfig();
+    if (!config) return res.status(503).json({ error: "Calling is unavailable. The server needs a valid LiveKit URL, API key, and secret." });
+    const call = typeof req.body?.callId === "string" ? calls.get(req.body.callId, req.userId!) : undefined;
+    if (!call || call.conversationId !== req.params.conversationId) return res.status(404).json({ error: "This call has ended or you are not a participant." });
+
+    const token = new AccessToken(config.key, config.secret, { identity: req.userId!, ttl: "10m" });
+    token.addGrant({ room: `call-${call.id}`, roomJoin: true, canPublish: true, canSubscribe: true });
+    res.json({ token: await token.toJwt(), url: config.url });
+  } catch (error) {
+    console.error("Could not issue call token", error instanceof Error ? error.message : "Unknown error");
+    res.status(500).json({ error: "Could not connect your call. Please try again." });
   }
-
-  const apiKey = process.env.LIVEKIT_API_KEY;
-  const apiSecret = process.env.LIVEKIT_API_SECRET;
-  if (!apiKey || !apiSecret) {
-    return res.status(500).json({ error: "Video calling is not configured" });
-  }
-
-  const at = new AccessToken(apiKey, apiSecret, {
-    identity: req.userId!,
-    ttl: "10m",
-  });
-  at.addGrant({
-    room: conversation.id,
-    roomJoin: true,
-    canPublish: true,
-    canSubscribe: true,
-  });
-
-  res.json({ token: await at.toJwt(), url: process.env.LIVEKIT_URL });
 });
