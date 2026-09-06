@@ -1,0 +1,69 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  displayName  String
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+
+  sentMessages     Message[] @relation("SentMessages")
+  conversationsA   Conversation[] @relation("ConversationUserA")
+  conversationsB   Conversation[] @relation("ConversationUserB")
+  callsAsCaller    Call[] @relation("CallCaller")
+  callsAsCallee    Call[] @relation("CallCallee")
+}
+
+model Conversation {
+  id        String   @id @default(cuid())
+  userAId   String
+  userBId   String
+  userA     User     @relation("ConversationUserA", fields: [userAId], references: [id])
+  userB     User     @relation("ConversationUserB", fields: [userBId], references: [id])
+  createdAt DateTime @default(now())
+
+  messages Message[]
+  calls    Call[]
+
+  @@unique([userAId, userBId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  senderId       String
+  sender         User         @relation("SentMessages", fields: [senderId], references: [id])
+  body           String
+  createdAt      DateTime     @default(now())
+  readAt         DateTime?
+
+  @@index([conversationId, createdAt])
+}
+
+enum CallStatus {
+  MISSED
+  DECLINED
+  COMPLETED
+}
+
+model Call {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  callerId       String
+  caller         User         @relation("CallCaller", fields: [callerId], references: [id])
+  calleeId       String
+  callee         User         @relation("CallCallee", fields: [calleeId], references: [id])
+  status         CallStatus?
+  startedAt      DateTime     @default(now())
+  endedAt        DateTime?
+}
