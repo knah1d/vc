@@ -37,7 +37,7 @@ function CallStage({ mode, otherName, onError }: Pick<CallModalProps, "mode" | "
     {mode === "voice" ? <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 py-8"><div className={`mb-8 rounded-full border border-lavender-200 p-6 ${together ? "animate-ring" : ""}`}><Avatar name={otherName} large /></div><h2 className="mt-2 text-2xl font-semibold">{otherName}</h2><p className="mt-2.5 mb-6 text-xs text-muted">Just the two of you. All ears.</p><div className="flex items-center gap-2 text-[10px] text-muted"><Icon name="mic" size={16} />Voice call · Camera off</div></div> : (
       <div className="relative min-h-0 flex-1 overflow-hidden rounded-2xl bg-black">
         {remoteTrackRef && isTrackReference(remoteTrackRef) ? (
-          <VideoTrack trackRef={remoteTrackRef} className="h-full w-full object-cover" />
+          <VideoTrack trackRef={remoteTrackRef} className="h-full w-full scale-x-[-1] object-cover" />
         ) : (
           <div className="grid h-full place-items-center"><div className="flex flex-col items-center gap-3 text-white/80"><Avatar name={otherName} large /><p className="text-xs">{participants.length > 0 ? `${otherName}'s camera is off` : `Waiting for ${otherName} to join…`}</p></div></div>
         )}
