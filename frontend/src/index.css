@@ -52,7 +52,12 @@
   --lk-bg2: #e8e2f1;
   --lk-fg: #514561;
   --lk-control-bg: #e6dfef;
+  --lk-control-fg: #574275;
   --lk-control-hover-bg: #dbd1e8;
+  --lk-control-active-bg: #d8cce9;
+  --lk-control-active-hover-bg: #c1b0dc;
+  --lk-accent-bg: #9580bb;
+  --lk-danger: #ad516d;
   --lk-border-color: #ffffff90;
   --lk-border-radius: 12px;
 }

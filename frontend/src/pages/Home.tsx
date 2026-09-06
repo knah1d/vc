@@ -1,6 +1,6 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api } from "../lib/api";
-import { getSocket } from "../lib/socket";
+import { getSocket, isSocketConnected, subscribeConnection } from "../lib/socket";
 import { useCalls } from "../lib/useCalls";
 import { useAuth } from "../context/AuthContext";
 import ChatWindow from "../components/ChatWindow";
@@ -26,7 +26,7 @@ export default function Home() {
   const [starting, setStarting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [connected, setConnected] = useState(getSocket().connected);
+  const connected = useSyncExternalStore(subscribeConnection, isSocketConnected);
   const emailRef = useRef<HTMLInputElement>(null);
   const calls = useCalls();
 
@@ -46,19 +46,14 @@ export default function Home() {
   useEffect(() => {
     const initial = window.setTimeout(() => void refreshConversations(), 0);
     const socket = getSocket();
-    function onConnect() { setConnected(true); void refreshConversations(); }
-    function onDisconnect() { setConnected(false); }
+    function onConnect() { void refreshConversations(); }
     function onMessageNew() { void refreshConversations(); }
     socket.on("connect", onConnect);
-    socket.on("disconnect", onDisconnect);
-    socket.on("connect_error", onDisconnect);
     socket.on("message:new", onMessageNew);
     socket.on("conversation:new", onMessageNew);
     return () => {
       clearTimeout(initial);
       socket.off("connect", onConnect);
-      socket.off("disconnect", onDisconnect);
-      socket.off("connect_error", onDisconnect);
       socket.off("message:new", onMessageNew);
       socket.off("conversation:new", onMessageNew);
     };
