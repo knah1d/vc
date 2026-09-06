@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { getSocket } from "../lib/socket";
 import { useAuth } from "../context/AuthContext";
@@ -8,6 +8,7 @@ import CallModal from "../components/CallModal";
 interface Conversation {
   id: string;
   other: { id: string; displayName: string };
+  unreadCount: number;
 }
 
 export default function Home() {
@@ -17,9 +18,15 @@ export default function Home() {
   const [otherEmail, setOtherEmail] = useState("");
   const [incomingCall, setIncomingCall] = useState<{ conversationId: string; callerId: string } | null>(null);
   const [activeCall, setActiveCall] = useState<{ token: string; url: string } | null>(null);
+  const activeIdRef = useRef<string | null>(null);
+  activeIdRef.current = activeId;
 
   function refreshConversations() {
     api.listConversations().then(({ conversations }) => setConversations(conversations));
+  }
+
+  function markConversationRead(conversationId: string) {
+    setConversations((prev) => prev.map((c) => (c.id === conversationId ? { ...c, unreadCount: 0 } : c)));
   }
 
   useEffect(() => {
@@ -36,15 +43,25 @@ export default function Home() {
       setActiveCall(null);
       setIncomingCall(null);
     }
+    // Bumps the sidebar badge for conversations the user isn't currently viewing;
+    // ChatWindow handles marking messages read (and resetting the badge) for the active one.
+    function onMessageNew({ message }: { message: { conversationId: string } }) {
+      if (message.conversationId === activeIdRef.current) return;
+      setConversations((prev) =>
+        prev.map((c) => (c.id === message.conversationId ? { ...c, unreadCount: c.unreadCount + 1 } : c))
+      );
+    }
     socket.on("call:incoming", onIncoming);
     socket.on("call:accepted", onAccepted);
     socket.on("call:declined", onDeclinedOrEnded);
     socket.on("call:ended", onDeclinedOrEnded);
+    socket.on("message:new", onMessageNew);
     return () => {
       socket.off("call:incoming", onIncoming);
       socket.off("call:accepted", onAccepted);
       socket.off("call:declined", onDeclinedOrEnded);
       socket.off("call:ended", onDeclinedOrEnded);
+      socket.off("message:new", onMessageNew);
     };
   }, []);
 
@@ -109,9 +126,31 @@ export default function Home() {
             <li key={c.id}>
               <button
                 onClick={() => setActiveId(c.id)}
-                style={{ width: "100%", textAlign: "left", fontWeight: c.id === activeId ? "bold" : "normal" }}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  textAlign: "left",
+                  fontWeight: c.id === activeId ? "bold" : "normal",
+                }}
               >
-                {c.other.displayName}
+                <span>{c.other.displayName}</span>
+                {c.unreadCount > 0 && (
+                  <span
+                    style={{
+                      background: "#3b82f6",
+                      color: "#fff",
+                      borderRadius: 999,
+                      padding: "0 0.45rem",
+                      fontSize: "0.75rem",
+                      minWidth: "1.2rem",
+                      textAlign: "center",
+                    }}
+                  >
+                    {c.unreadCount}
+                  </span>
+                )}
               </button>
             </li>
           ))}
@@ -120,7 +159,11 @@ export default function Home() {
 
       <main style={{ flex: 1 }}>
         {activeId ? (
-          <ChatWindow conversationId={activeId} onStartCall={handleStartCall} />
+          <ChatWindow
+            conversationId={activeId}
+            onStartCall={handleStartCall}
+            onRead={() => markConversationRead(activeId)}
+          />
         ) : (
           <p style={{ padding: "1rem" }}>Select or start a conversation.</p>
         )}

@@ -37,13 +37,20 @@ export const api = {
       body: JSON.stringify({ otherEmail }),
     }),
   listConversations: () =>
-    request<{ conversations: Array<{ id: string; other: { id: string; displayName: string }; createdAt: string }> }>(
-      "/conversations"
-    ),
+    request<{
+      conversations: Array<{
+        id: string;
+        other: { id: string; displayName: string };
+        createdAt: string;
+        unreadCount: number;
+      }>;
+    }>("/conversations"),
   listMessages: (conversationId: string) =>
     request<{ messages: Array<{ id: string; senderId: string; body: string; createdAt: string }> }>(
       `/conversations/${conversationId}/messages`
     ),
+  markRead: (conversationId: string) =>
+    request<{ ok: true }>(`/conversations/${conversationId}/read`, { method: "POST" }),
   getVideoToken: (conversationId: string) =>
     request<{ token: string; url: string }>(`/video/token/${conversationId}`, { method: "POST" }),
 };

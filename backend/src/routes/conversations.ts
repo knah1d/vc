@@ -42,6 +42,17 @@ conversationsRouter.get("/", async (req: AuthedRequest, res) => {
     orderBy: { createdAt: "desc" },
   });
 
+  const unreadCounts = await prisma.message.groupBy({
+    by: ["conversationId"],
+    where: {
+      conversationId: { in: conversations.map((c) => c.id) },
+      senderId: { not: req.userId },
+      readAt: null,
+    },
+    _count: { _all: true },
+  });
+  const unreadByConversation = new Map(unreadCounts.map((u) => [u.conversationId, u._count._all]));
+
   res.json({
     conversations: conversations.map((c) => {
       const other = c.userAId === req.userId ? c.userB : c.userA;
@@ -49,6 +60,7 @@ conversationsRouter.get("/", async (req: AuthedRequest, res) => {
         id: c.id,
         other: { id: other.id, displayName: other.displayName, avatarUrl: other.avatarUrl },
         createdAt: c.createdAt,
+        unreadCount: unreadByConversation.get(c.id) ?? 0,
       };
     }),
   });
@@ -79,4 +91,18 @@ conversationsRouter.get("/:id/messages", async (req: AuthedRequest, res) => {
   });
 
   res.json({ messages: messages.reverse() });
+});
+
+conversationsRouter.post("/:id/read", async (req: AuthedRequest, res) => {
+  const conversation = await assertParticipant(req.params.id, req.userId!);
+  if (!conversation) {
+    return res.status(404).json({ error: "Conversation not found" });
+  }
+
+  await prisma.message.updateMany({
+    where: { conversationId: conversation.id, senderId: { not: req.userId }, readAt: null },
+    data: { readAt: new Date() },
+  });
+
+  res.json({ ok: true });
 });

@@ -47,8 +47,13 @@ export function createWsServer(httpServer: HttpServer) {
       ack?.({ message });
     });
 
-    socket.on("typing", ({ conversationId, isTyping }) => {
-      socket.broadcast.emit("typing", { conversationId, userId, isTyping });
+    socket.on("typing", async ({ conversationId, isTyping }) => {
+      const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } });
+      if (!conversation || (conversation.userAId !== userId && conversation.userBId !== userId)) return;
+      const otherId = conversation.userAId === userId ? conversation.userBId : conversation.userAId;
+      for (const socketId of onlineUsers.get(otherId) ?? []) {
+        io.to(socketId).emit("typing", { conversationId, userId, isTyping });
+      }
     });
 
     // --- Call signaling (ring/accept/decline; media itself goes over LiveKit) ---
