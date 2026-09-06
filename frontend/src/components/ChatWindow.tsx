@@ -4,6 +4,7 @@ import { getSocket } from "../lib/socket";
 import { useAuth } from "../context/AuthContext";
 import type { CallMode } from "../lib/calls";
 import Icon, { Avatar } from "./Icon";
+import { IconButton, Notice } from "./ui";
 
 interface Message { id: string; senderId: string; body: string; createdAt: string }
 interface ChatWindowProps {
@@ -102,7 +103,7 @@ export default function ChatWindow({ conversationId, otherName, connected, callD
     clearTimeout(typingStopTimer.current);
     wasTyping.current = false;
     getSocket().volatile.emit("typing", { conversationId, isTyping: false });
-    getSocket().timeout(10_000).volatile.emit("message:send", { conversationId, body }, (timeout: Error | null, res?: { message?: Message; error?: string }) => {
+    getSocket().timeout(10_000).emit("message:send", { conversationId, body }, (timeout: Error | null, res?: { message?: Message; error?: string }) => {
       setSending(false);
       if (timeout) setError("No delivery confirmation. Check the conversation before sending again.");
       else if (res?.error) setError(res.error);
@@ -114,21 +115,51 @@ export default function ChatWindow({ conversationId, otherName, connected, callD
     });
   }
 
-  return <section className="chat-window">
-    <header className="chat-header"><button className="icon-button mobile-back" onClick={onBack} aria-label="Back to conversations"><Icon name="arrow" /></button><Avatar name={otherName} /><div className="chat-person"><h2>{otherName}</h2><span>{otherTyping ? "Typing a little something…" : "A space for the two of you"}</span></div><div className="chat-actions"><button className="icon-button" onClick={() => onStartCall("voice")} disabled={callDisabled} aria-label="Start voice call" title="Voice call"><Icon name="phone" /></button><button className="icon-button video-button" onClick={() => onStartCall("video")} disabled={callDisabled} aria-label="Start video call" title="Video call"><Icon name="video" /></button></div></header>
-    <div className="message-scroll" role="log" aria-label={`Messages with ${otherName}`} aria-live="polite">
-      <div className="conversation-intro"><Avatar name={otherName} large /><h3>{otherName}</h3><p>{loading ? "Loading your conversation…" : "Every good conversation starts with a hello."}</p></div>
-      {messages.map((message, i) => {
-        const mine = message.senderId === user?.id;
-        const date = new Date(message.createdAt);
-        const previous = messages[i - 1];
-        const newDay = !previous || new Date(previous.createdAt).toDateString() !== date.toDateString();
-        return <div key={message.id}>{newDay && <div className="date-divider"><span>{date.toDateString() === new Date().toDateString() ? "Today" : date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span></div>}<div className={`message-row ${mine ? "mine" : "theirs"}`}>{!mine && <Avatar name={otherName} />}<div className="message-content"><div className="message-bubble">{message.body}</div><time dateTime={message.createdAt}>{date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></div></div></div>;
-      })}
-      {otherTyping && <div className="typing-indicator" aria-label={`${otherName} is typing`}><i /><i /><i /></div>}
-      <div ref={bottomRef} />
-    </div>
-    {error && <div className="notice error" role="alert">{error}</div>}
-    <div className="composer-area"><form className="composer" onSubmit={sendMessage}><input ref={inputRef} aria-label="Message" maxLength={10000} value={draft} onChange={(e) => handleDraftChange(e.target.value)} placeholder={connected ? `Message ${otherName.split(" ")[0]}…` : "Waiting for connection…"} /><button className="send-button" type="submit" disabled={!draft.trim() || sending || !connected} aria-label={sending ? "Sending message" : "Send message"}><Icon name="send" size={20} /></button></form><p className="composer-hint">{sending ? "Sending your message…" : "A little message can make someone’s day."}<span>Enter to send</span></p></div>
-  </section>;
+  return (
+    <section className="flex min-h-0 flex-1 flex-col">
+      <header className="flex h-20 shrink-0 items-center gap-3 border-b border-white/75 bg-white/15 px-4 lg:h-23 lg:px-8">
+        <button className="-ml-1 p-1 text-lavender-700 md:hidden" onClick={onBack} aria-label="Back to conversations"><Icon name="arrow" /></button>
+        <Avatar name={otherName} />
+        <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-bold">{otherName}</h2><span className="mt-1 block truncate text-[10px] text-muted sm:text-xs">{otherTyping ? "Typing a little something…" : "A space for the two of you"}</span></div>
+        <div className="flex gap-2">
+          <IconButton label="Start voice call" onClick={() => onStartCall("voice")} disabled={callDisabled}><Icon name="phone" /></IconButton>
+          <IconButton label="Start video call" onClick={() => onStartCall("video")} disabled={callDisabled} className="bg-lavender-100/70"><Icon name="video" /></IconButton>
+        </div>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-6 pb-3 md:px-8" role="log" aria-label={`Messages with ${otherName}`} aria-live="polite">
+        <div className="pt-3 pb-8 text-center">
+          <Avatar name={otherName} large /><h3 className="mt-4 mb-1.5 text-sm font-semibold">{otherName}</h3>
+          <p className="text-xs text-muted">{loading ? "Loading your conversation…" : "Every good conversation starts with a hello."}</p>
+        </div>
+        {messages.map((message, i) => {
+          const mine = message.senderId === user?.id;
+          const date = new Date(message.createdAt);
+          const previous = messages[i - 1];
+          const newDay = !previous || new Date(previous.createdAt).toDateString() !== date.toDateString();
+          return <div key={message.id}>
+            {newDay && <div className="my-5 flex items-center justify-center gap-4 text-[10px] text-muted before:h-px before:w-14 before:bg-lavender-200/50 after:h-px after:w-14 after:bg-lavender-200/50"><span>{date.toDateString() === new Date().toDateString() ? "Today" : date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span></div>}
+            <div className={`mb-5 flex items-end gap-2 ${mine ? "justify-end" : ""}`}>
+              {!mine && <span className="mb-5"><Avatar name={otherName} small /></span>}
+              <div className="min-w-0 max-w-[82%] md:max-w-[75%]">
+                <div className={`rounded-2xl border px-4 py-3 text-sm leading-7 whitespace-pre-wrap wrap-anywhere ${mine ? "rounded-br-sm border-lavender-300/60 bg-linear-to-br from-lavender-500 to-lavender-600 text-white shadow-button" : "rounded-bl-sm border-white/90 bg-white/80 text-ink shadow-sm shadow-lavender-700/5"}`}>{message.body}</div>
+                <time className={`mt-1.5 block text-[10px] text-muted ${mine ? "text-right" : ""}`} dateTime={message.createdAt}>{date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
+              </div>
+            </div>
+          </div>;
+        })}
+        {otherTyping && <div className="mb-3 flex w-fit gap-1 rounded-2xl bg-white/70 px-4 py-3" aria-label={`${otherName} is typing`}>{[0, 1, 2].map((i) => <i key={i} className="size-1.5 animate-typing rounded-full bg-lavender-400" style={{ animationDelay: `${i * .15}s` }} />)}</div>}
+        <div ref={bottomRef} />
+      </div>
+
+      {error && <Notice tone="error" className="mx-4 my-2">{error}</Notice>}
+      <div className="shrink-0 px-3 pt-3 pb-4 md:px-7 md:pb-5">
+        <form className="flex items-center gap-3 rounded-2xl border border-white bg-white/80 py-2 pr-2 pl-4 shadow-sm shadow-lavender-700/5 focus-within:border-lavender-300" onSubmit={sendMessage}>
+          <input ref={inputRef} className="min-w-0 flex-1 bg-transparent py-2 text-sm outline-none placeholder:text-faint" aria-label="Message" maxLength={10000} value={draft} onChange={(e) => handleDraftChange(e.target.value)} placeholder={connected ? `Message ${otherName.split(" ")[0]}…` : "Waiting for connection…"} />
+          <button className="grid size-10 shrink-0 place-items-center rounded-xl border border-white/30 bg-linear-to-br from-lavender-500 to-lavender-600 text-white shadow-button" type="submit" disabled={!draft.trim() || sending || !connected} aria-label={sending ? "Sending message" : "Send message"}><Icon name="send" size={20} /></button>
+        </form>
+        <p className="mx-1 mt-2.5 flex justify-between text-[10px] text-muted">{sending ? "Sending your message…" : "A little message can make someone’s day."}<span className="hidden sm:inline">Enter to send</span></p>
+      </div>
+    </section>
+  );
 }

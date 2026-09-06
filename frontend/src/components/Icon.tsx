@@ -18,7 +18,7 @@ export default function Icon({ name, size = 20 }: { name: keyof typeof paths; si
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg>;
 }
 
-export function Avatar({ name, large = false }: { name: string; large?: boolean }) {
+export function Avatar({ name, large = false, small = false }: { name: string; large?: boolean; small?: boolean }) {
   const hue = [...name].reduce((value, char) => value + char.charCodeAt(0), 0) % 360;
-  return <span className={`avatar ${large ? "avatar-large" : ""}`} style={{ "--avatar-hue": hue } as CSSProperties}>{name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "?"}</span>;
+  return <span className={`inline-flex shrink-0 items-center justify-center border border-white/70 bg-[linear-gradient(140deg,hsl(var(--avatar-hue)_44%_93%),hsl(var(--avatar-hue)_38%_83%))] font-display font-bold text-[hsl(var(--avatar-hue)_22%_35%)] shadow-[inset_0_1px_1px_#fff9] ${large ? "size-21 rounded-[29px] text-2xl" : small ? "size-8 rounded-xl text-[10px]" : "size-11 rounded-2xl text-sm"}`} style={{ "--avatar-hue": hue } as CSSProperties}>{name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "?"}</span>;
 }

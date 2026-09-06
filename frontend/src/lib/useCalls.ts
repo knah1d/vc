@@ -13,7 +13,7 @@ function signal<T>(event: string, payload: unknown): Promise<T> {
   const socket = getSocket();
   if (!socket.connected) return Promise.reject(new Error("You're disconnected. Wait for the connection to return."));
   return new Promise((resolve, reject) => {
-    socket.timeout(10_000).volatile.emit(event, payload, (error: Error | null, response: T & { error?: string }) => {
+    socket.timeout(10_000).emit(event, payload, (error: Error | null, response: T & { error?: string }) => {
       if (error) reject(new Error("The call request timed out. Please try again."));
       else if (response?.error) reject(new Error(response.error));
       else resolve(response);
@@ -78,6 +78,8 @@ export function useCalls() {
       socket.off("call:ended", ended);
       socket.off("call:answered", answered);
       socket.off("disconnect", disconnected);
+      // This is mutable call state, not a DOM ref: invalidate the latest pending attempt.
+      // oxlint-disable-next-line react-hooks/exhaustive-deps
       revision.current++;
       if (callRef.current) void signal("call:hangup", { callId: callRef.current.callId }).catch(() => {});
     };
@@ -111,6 +113,7 @@ export function useCalls() {
   async function accept() {
     const current = callRef.current;
     if (!current || current.phase !== "incoming" || busy.current) return;
+    const attempt = revision.current;
     busy.current = true;
     update({ ...current, phase: "connecting" });
     try {
@@ -122,7 +125,7 @@ export function useCalls() {
       if (callRef.current?.callId === current.callId) update({ ...current, phase: "active", ...credentials });
     } catch (error) {
       if (callRef.current?.callId === current.callId) close(callError(error));
-    } finally { busy.current = false; }
+    } finally { if (revision.current === attempt) busy.current = false; }
   }
 
   function decline() {
