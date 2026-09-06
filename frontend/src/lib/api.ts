@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL as string;
+const API_URL = (import.meta.env.VITE_API_URL || "http://localhost:4000").replace(/\/$/, "");
 
 function getToken(): string | null {
   return localStorage.getItem("token");
@@ -16,7 +16,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data.error ? JSON.stringify(data.error) : `Request failed: ${res.status}`);
+    throw new Error(typeof data.error === "string" ? data.error : data.error ? "Please check your details and try again." : `Request failed: ${res.status}`);
   }
   return data as T;
 }
@@ -51,8 +51,9 @@ export const api = {
     ),
   markRead: (conversationId: string) =>
     request<{ ok: true }>(`/conversations/${conversationId}/read`, { method: "POST" }),
-  getVideoToken: (conversationId: string) =>
-    request<{ token: string; url: string }>(`/video/token/${conversationId}`, { method: "POST" }),
+  callStatus: () => request<{ configured: boolean }>("/video/status"),
+  getVideoToken: (conversationId: string, callId: string) =>
+    request<{ token: string; url: string }>(`/video/token/${conversationId}`, { method: "POST", body: JSON.stringify({ callId }) }),
 };
 
 export { getToken };
