@@ -6,6 +6,7 @@
     "@config-plugins/react-native-webrtc": "^15.0.2",
     "@expo/ui": "~57.0.16",
     "@livekit/react-native": "^2.12.0",
+    "@livekit/react-native-expo-plugin": "^1.0.2",
     "@livekit/react-native-webrtc": "^144.1.2",
     "@sentry/react-native": "~7.11.0",
     "expo": "~57.0.20",
@@ -46,6 +47,8 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.cjs",
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",

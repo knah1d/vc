@@ -11,7 +11,7 @@ import {
 } from '@livekit/react-native';
 import { ConnectionState, Track } from 'livekit-client';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -36,7 +36,7 @@ function formatDuration(totalSeconds: number) {
   return `${minutes}:${seconds}`;
 }
 
-function CallStage({ mode, otherName }: Pick<CallScreenProps, 'mode' | 'otherName'>) {
+function CallStage({ mode, otherName, onLeave }: Pick<CallScreenProps, 'mode' | 'otherName' | 'onLeave'>) {
   const room = useRoomContext();
   const connection = useConnectionState();
   const participants = useRemoteParticipants();
@@ -77,7 +77,7 @@ function CallStage({ mode, otherName }: Pick<CallScreenProps, 'mode' | 'otherNam
           <ThemedText type="subtitle" style={styles.voiceName}>
             {otherName}
           </ThemedText>
-          <ThemedText themeColor="textSecondary">Just the two of you. All ears.</ThemedText>
+          <ThemedText style={{ color: '#B6ACC9' }}>Just the two of you. All ears.</ThemedText>
         </View>
       ) : (
         <View style={styles.videoStage}>
@@ -107,21 +107,25 @@ function CallStage({ mode, otherName }: Pick<CallScreenProps, 'mode' | 'otherNam
 
       <View style={styles.controls}>
         <Pressable
-          onPress={() => localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled)}
+          accessibilityRole="button"
+          accessibilityLabel={isMicrophoneEnabled ? 'Mute microphone' : 'Unmute microphone'}
+          onPress={() => { void localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled).catch((error) => Alert.alert('Microphone', callError(error))); }}
           style={[styles.controlButton, !isMicrophoneEnabled && styles.controlButtonOff]}
         >
-          <Text style={styles.controlIcon}>{isMicrophoneEnabled ? '🎙️' : '🔇'}</Text>
+          <Text style={styles.controlLabel}>{isMicrophoneEnabled ? 'Mute' : 'Unmute'}</Text>
         </Pressable>
         {mode === 'video' && (
           <Pressable
-            onPress={() => localParticipant.setCameraEnabled(!isCameraEnabled)}
+            accessibilityRole="button"
+            accessibilityLabel={isCameraEnabled ? 'Turn camera off' : 'Turn camera on'}
+            onPress={() => { void localParticipant.setCameraEnabled(!isCameraEnabled).catch((error) => Alert.alert('Camera', callError(error))); }}
             style={[styles.controlButton, !isCameraEnabled && styles.controlButtonOff]}
           >
-            <Text style={styles.controlIcon}>{isCameraEnabled ? '📷' : '🚫'}</Text>
+            <Text style={styles.controlLabel}>{isCameraEnabled ? 'Cam off' : 'Cam on'}</Text>
           </Pressable>
         )}
-        <Pressable onPress={() => room.disconnect()} style={[styles.controlButton, styles.hangup]}>
-          <Text style={styles.controlIcon}>📞</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="End call" onPress={onLeave} style={[styles.controlButton, styles.hangup]}>
+          <Text style={styles.controlLabel}>End</Text>
         </Pressable>
       </View>
     </View>
@@ -129,15 +133,20 @@ function CallStage({ mode, otherName }: Pick<CallScreenProps, 'mode' | 'otherNam
 }
 
 export function CallScreen({ token, serverUrl, mode, otherName, onLeave, onError }: CallScreenProps) {
+  const [audioReady, setAudioReady] = useState(false);
   useEffect(() => {
-    AudioSession.startAudioSession();
+    let active = true;
+    const start = AudioSession.startAudioSession();
+    void start.then(() => { if (active) setAudioReady(true); }).catch((error) => { if (active) onError(callError(error)); });
     return () => {
-      AudioSession.stopAudioSession();
+      active = false;
+      void start.catch(() => {}).then(() => AudioSession.stopAudioSession()).catch(console.warn);
     };
   }, []);
 
   return (
     <SafeAreaView style={styles.root}>
+      {!audioReady ? <ActivityIndicator color="#C6AEFF" style={{ flex: 1 }} /> :
       <LiveKitRoom
         serverUrl={serverUrl}
         token={token}
@@ -150,24 +159,25 @@ export function CallScreen({ token, serverUrl, mode, otherName, onLeave, onError
           onError(`Couldn't access your microphone or camera (${failure ?? 'device unavailable'}).`)
         }
       >
-        <CallStage mode={mode} otherName={otherName} />
-      </LiveKitRoom>
+        <CallStage mode={mode} otherName={otherName} onLeave={onLeave} />
+      </LiveKitRoom>}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#000' },
+  root: { flex: 1, backgroundColor: '#171224' },
   stageFlex: { flex: 1 },
   statusRow: { alignItems: 'center', paddingVertical: Spacing.three },
   statusText: { color: '#fff', fontSize: 13 },
   voiceStage: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.two },
   avatarRing: {
-    width: 96,
-    height: 96,
+    width: 132,
+    height: 132,
     borderRadius: 48,
+    backgroundColor: '#332544',
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.4)',
+    borderColor: '#8462B5',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.two,
@@ -197,9 +207,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.four,
   },
   controlButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 72,
+    height: 64,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.15)',
@@ -207,4 +217,5 @@ const styles = StyleSheet.create({
   controlButtonOff: { backgroundColor: 'rgba(255,255,255,0.35)' },
   hangup: { backgroundColor: '#C4423B' },
   controlIcon: { fontSize: 24 },
+  controlLabel: { color: '#fff', fontSize: 13, fontWeight: '700' },
 });

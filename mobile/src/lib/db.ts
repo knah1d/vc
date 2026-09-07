@@ -22,10 +22,9 @@ export interface LocalConversation {
   created_at: string;
 }
 
-let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
-
-async function openDb() {
-  const database = await SQLite.openDatabaseAsync('hush.db');
+async function openDb(userId: string) {
+  // Never import the legacy shared cache: its account ownership is unknown.
+  const database = await SQLite.openDatabaseAsync(`hush-account-${encodeURIComponent(userId)}.db`);
   await database.execAsync(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS conversations (
@@ -49,12 +48,15 @@ async function openDb() {
   return database;
 }
 
-function getDb() {
-  if (!dbPromise) dbPromise = openDb();
-  return dbPromise;
-}
+const databases = new Map<string, Promise<SQLite.SQLiteDatabase>>();
 
-export const db = {
+export function dbForUser(userId: string) {
+  if (!userId) throw new Error('A signed-in account is required for local storage.');
+  function getDb() {
+    if (!databases.has(userId)) databases.set(userId, openDb(userId));
+    return databases.get(userId)!;
+  }
+  return {
   async upsertConversations(conversations: LocalConversation[]) {
     const database = await getDb();
     for (const c of conversations) {
@@ -90,6 +92,7 @@ export const db = {
          VALUES ($client_id, $server_id, $conversation_id, $sender_id, $body, $created_at, $status)
          ON CONFLICT(client_id) DO UPDATE SET
            server_id = excluded.server_id,
+           created_at = excluded.created_at,
            status = excluded.status`,
         {
           $client_id: m.client_id,
@@ -133,4 +136,5 @@ export const db = {
     const database = await getDb();
     await database.runAsync(`UPDATE conversations SET unread_count = 0 WHERE id = $id`, { $id: conversationId });
   },
-};
+  };
+}

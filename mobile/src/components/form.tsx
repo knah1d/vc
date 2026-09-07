@@ -4,7 +4,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-export function FormInput(props: TextInputProps) {
+export function FormInput({ style, ...props }: TextInputProps) {
   const theme = useTheme();
   return (
     <TextInput
@@ -12,6 +12,7 @@ export function FormInput(props: TextInputProps) {
       style={[
         styles.input,
         { borderColor: theme.border, color: theme.text, backgroundColor: theme.backgroundElement },
+        style,
       ]}
       {...props}
     />
@@ -32,6 +33,8 @@ export function PrimaryButton({
   const theme = useTheme();
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled: !!(disabled || loading), busy: !!loading }}
       onPress={onPress}
       disabled={disabled || loading}
       style={({ pressed }) => [
@@ -56,13 +59,16 @@ export function FormError({ message }: { message: string }) {
 const styles = StyleSheet.create({
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
+    borderRadius: 18,
+    minHeight: 52,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two + 4,
     fontSize: 16,
   },
   button: {
-    borderRadius: 12,
+    borderRadius: 18,
+    minHeight: 52,
+    paddingHorizontal: 20,
     paddingVertical: Spacing.three,
     alignItems: 'center',
     justifyContent: 'center',

@@ -7,7 +7,9 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useCallsContext } from '@/context/CallsContext';
 import { useTheme } from '@/hooks/use-theme';
-import { db } from '@/lib/db';
+import { dbForUser } from '@/lib/db';
+import { useAuth } from '@/context/AuthContext';
+import { Avatar } from './mobile-ui';
 
 import { CallScreen } from './CallScreen';
 
@@ -16,17 +18,21 @@ import { CallScreen } from './CallScreen';
 // CallDialog, which similarly floats above the whole page regardless of route.
 export function CallOverlay() {
   const calls = useCallsContext();
+  const { user } = useAuth();
   const theme = useTheme();
   const [otherName, setOtherName] = useState('Your contact');
 
   const conversationId = calls.call?.conversationId;
   useEffect(() => {
-    if (!conversationId) return;
-    db.listConversations().then((rows) => {
+    setOtherName('Your contact');
+    if (!conversationId || !user) return;
+    let active = true;
+    dbForUser(user.id).listConversations().then((rows) => {
       const match = rows.find((r) => r.id === conversationId);
-      if (match) setOtherName(match.other_name);
-    });
-  }, [conversationId]);
+      if (active && match) setOtherName(match.other_name);
+    }).catch(console.warn);
+    return () => { active = false; };
+  }, [conversationId, user?.id]);
 
   useEffect(() => {
     if (calls.notice) {
@@ -37,7 +43,7 @@ export function CallOverlay() {
 
   if (calls.preparing) {
     return (
-      <Modal visible transparent animationType="fade">
+      <Modal visible transparent animationType="fade" onRequestClose={() => calls.close()}>
         <View style={styles.backdrop}>
           <ThemedView style={[styles.card, { borderColor: theme.border }]}>
             <ActivityIndicator />
@@ -57,7 +63,7 @@ export function CallOverlay() {
 
   if (calls.call.phase === 'active' && calls.call.token && calls.call.url) {
     return (
-      <Modal visible animationType="slide" presentationStyle="fullScreen">
+      <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={() => calls.close()}>
         <CallScreen
           token={calls.call.token}
           serverUrl={calls.call.url}
@@ -79,10 +85,11 @@ export function CallOverlay() {
         : 'Connecting your call…';
 
   return (
-    <Modal visible transparent animationType="fade">
+    <Modal visible transparent animationType="fade" onRequestClose={() => phase === 'incoming' ? calls.decline() : calls.close()}>
       <View style={styles.backdrop}>
-        <SafeAreaView>
+        <SafeAreaView style={{ width: '100%', alignItems: 'center' }}>
           <ThemedView style={[styles.card, { borderColor: theme.border }]}>
+            <Avatar name={otherName} size={88} />
             <ThemedText type="subtitle" style={styles.cardText}>
               {otherName}
             </ThemedText>
@@ -118,14 +125,14 @@ export function CallOverlay() {
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(17,12,33,0.78)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   card: {
     width: '85%',
     maxWidth: 360,
-    borderRadius: 20,
+    borderRadius: 32,
     borderWidth: StyleSheet.hairlineWidth,
     padding: Spacing.five,
     alignItems: 'center',

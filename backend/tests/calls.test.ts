@@ -74,6 +74,19 @@ test("an unanswered call expires and releases both participants", async () => {
   assert.equal(calls.get(callId, "alice"), undefined);
   assert.equal(events.filter((event) => event === "call:ended").length, 2);
   assert.throws(() => calls.accept(callId, "bob", "bob-tab"));
+  assert.deepEqual(calls.pending('bob'), []);
+});
+
+test("recovery returns only the callee's still-ringing calls, never active or ended calls", () => {
+  const calls = new CallRegistry(() => {});
+  const invite = calls.invite(input);
+  assert.deepEqual(calls.pending('bob'), [invite]);
+  assert.deepEqual(calls.pending('alice'), []);
+  assert.deepEqual(calls.pending('mallory'), []);
+  calls.accept(invite.callId, 'bob', 'bob-reconnected');
+  assert.deepEqual(calls.pending('bob'), []);
+  calls.end(invite.callId, 'bob', 'bob-reconnected');
+  assert.deepEqual(calls.pending('bob'), []);
 });
 
 test("LiveKit configuration rejects missing credentials and placeholder or invalid URLs", () => {

@@ -37,6 +37,11 @@ export function createWsServer(httpServer: HttpServer) {
     onlineUsers.get(userId)!.add(socket.id);
     socket.broadcast.emit("presence:online", { userId });
 
+    // Explicit recovery also covers clients whose listeners mount after connect.
+    socket.on("call:sync", (_payload, ack) => {
+      if (typeof ack === "function") ack({ calls: calls.pending(userId) });
+    });
+
     // --- Messaging ---
     socket.on("message:send", async (payload, ack) => {
       const reply = typeof ack === "function" ? ack : () => {};
@@ -53,6 +58,9 @@ export function createWsServer(httpServer: HttpServer) {
         // A resend (e.g. a mobile client retrying after a dropped ack) carries
         // the same clientId — recognize it instead of creating a duplicate.
         const existing = clientId ? await prisma.message.findUnique({ where: { clientId } }) : null;
+        if (existing && (existing.senderId !== userId || existing.conversationId !== conversationId)) {
+          return reply({ error: "Invalid message identifier." });
+        }
         const message = existing ?? (await prisma.message.create({ data: { conversationId, senderId: userId, body, clientId } }));
 
         if (!existing) {

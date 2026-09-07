@@ -1,11 +1,10 @@
 import { Link } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet } from 'react-native';
+import { AuthShell } from '@/components/auth-shell';
 
 import { FormError, FormInput, PrimaryButton } from '@/components/form';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 
@@ -17,6 +16,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit() {
+    if (loading) return;
     setError(null);
     setLoading(true);
     try {
@@ -29,13 +29,7 @@ export default function LoginScreen() {
   }
 
   return (
-    <ThemedView style={styles.flex}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
-        <SafeAreaView style={styles.container}>
-          <ThemedText type="title" style={styles.title}>
-            hush.
-          </ThemedText>
-          <ThemedText type="subtitle">Welcome back.</ThemedText>
+    <AuthShell title="Welcome back." subtitle="Your people are just a hello away.">
 
           <FormInput
             placeholder="Email address"
@@ -62,9 +56,7 @@ export default function LoginScreen() {
               New around here? <ThemedText themeColor="tint">Create an account</ThemedText>
             </ThemedText>
           </Link>
-        </SafeAreaView>
-      </KeyboardAvoidingView>
-    </ThemedView>
+    </AuthShell>
   );
 }
 

@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
+import * as Notifications from 'expo-notifications';
 
 import { api } from './api';
 import { callError, checkMedia, type CallInvite, type CallMode } from './calls';
@@ -50,6 +52,7 @@ export function useCalls() {
   useEffect(() => {
     const socket = getSocket();
     function incoming(invite: CallInvite) {
+      if (callRef.current?.callId === invite.callId) return;
       if (callRef.current || busy.current) {
         void signal('call:decline', { callId: invite.callId }).catch(() => {});
         return;
@@ -76,12 +79,32 @@ export function useCalls() {
     function disconnected() {
       if (callRef.current || busy.current) close('Connection lost. Please try calling again once reconnected.', false);
     }
+    let mounted = true;
+    async function sync() {
+      if (!socket.connected) return;
+      try {
+        const result = await signal<{ calls: CallInvite[] }>('call:sync', {});
+        if (mounted) result.calls.forEach(incoming);
+      } catch { /* Reconnect will retry; never ring from an unverified push payload. */ }
+    }
+    socket.on('connect', sync);
+    const notification = Notifications.addNotificationResponseReceivedListener((response) => {
+      if (response.notification.request.content.data?.type === 'call:incoming') void sync();
+    });
+    const foreground = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void sync();
+    });
     socket.on('call:incoming', incoming);
     socket.on('call:accepted', accepted);
     socket.on('call:ended', ended);
     socket.on('call:answered', answered);
     socket.on('disconnect', disconnected);
+    void sync();
     return () => {
+      mounted = false;
+      foreground.remove();
+      notification.remove();
+      socket.off('connect', sync);
       socket.off('call:incoming', incoming);
       socket.off('call:accepted', accepted);
       socket.off('call:ended', ended);

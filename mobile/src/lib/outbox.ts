@@ -1,7 +1,7 @@
 import * as Crypto from 'expo-crypto';
 
-import { db, type LocalMessage } from './db';
-import { getSocket } from './socket';
+import { dbForUser, type LocalMessage } from './db';
+import { getSocket, socketBelongsTo } from './socket';
 
 export function newClientId() {
   return Crypto.randomUUID();
@@ -20,13 +20,35 @@ const ACK_TIMEOUT_MS = 8000;
 // Resolves once the local cache reflects the outcome — the connection dying
 // before an ack arrives is treated as a failure (flushOutbox will retry it on
 // the next reconnect, since 'failed' rows count as pending).
-export async function sendMessage(
+const inFlight = new Map<string, Promise<'sent' | 'failed'>>();
+const listeners = new Set<() => void>();
+export function subscribeOutbox(listener: () => void) {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
+export function sendMessage(userId: string, conversationId: string, clientId: string, body: string) {
+  const key = `${userId}:${clientId}`;
+  const pending = inFlight.get(key);
+  if (pending) return pending;
+  const request = performSend(userId, conversationId, clientId, body).finally(() => {
+    inFlight.delete(key);
+    listeners.forEach((listener) => listener());
+  });
+  inFlight.set(key, request);
+  return request;
+}
+
+async function performSend(
+  userId: string,
   conversationId: string,
   clientId: string,
   body: string
 ): Promise<'sent' | 'failed'> {
   const socket = getSocket();
+  const db = dbForUser(userId);
   try {
+    if (!socket.connected || !socketBelongsTo(userId)) throw new Error('Offline');
     const res: SendAck = await socket.timeout(ACK_TIMEOUT_MS).emitWithAck('message:send', {
       conversationId,
       body,
@@ -46,11 +68,15 @@ export async function sendMessage(
 }
 
 // Call on reconnect (or app foreground) to resend anything that never got an ack.
-export async function flushOutbox() {
+export async function flushOutbox(userId: string, isCurrent: () => boolean) {
+  const db = dbForUser(userId);
   const pending = await db.listPendingMessages();
   for (const m of pending) {
+    if (!isCurrent() || !getSocket().connected) return;
+    if (m.sender_id !== userId) continue;
     await db.setMessageStatus(m.client_id, 'sending');
-    await sendMessage(m.conversation_id, m.client_id, m.body);
+    if (!isCurrent()) return;
+    await sendMessage(userId, m.conversation_id, m.client_id, m.body);
   }
 }
 

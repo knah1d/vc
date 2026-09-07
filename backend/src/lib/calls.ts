@@ -23,6 +23,12 @@ export class CallRegistry {
     return call && [call.callerId, call.calleeId].includes(userId) ? call : undefined;
   }
 
+  pending(userId: string) {
+    return [...this.sessions.values()]
+      .filter((call) => call.calleeId === userId && call.status === "ringing")
+      .map((call) => this.payload(call));
+  }
+
   invite(input: Omit<CallSession, "id" | "status" | "calleeSocketId">) {
     for (const call of this.sessions.values()) {
       if ([call.callerId, call.calleeId].some((id) => id === input.callerId || id === input.calleeId)) {

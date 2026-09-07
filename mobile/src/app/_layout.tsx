@@ -9,6 +9,8 @@ import { CallOverlay } from '@/components/CallOverlay';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { CallsProvider } from '@/context/CallsContext';
 import { initSentry, Sentry } from '@/lib/sentry';
+import { api } from '@/lib/api';
+import { useTheme } from '@/hooks/use-theme';
 
 // Must run once before any LiveKit/WebRTC usage.
 registerGlobals();
@@ -18,30 +20,37 @@ SplashScreen.preventAutoHideAsync();
 
 function RootNavigator() {
   const { user, isLoading } = useAuth();
+  const theme = useTheme();
 
   useEffect(() => {
     if (!isLoading) SplashScreen.hideAsync();
   }, [isLoading]);
 
   useEffect(() => {
-    // Tapping a "new message" notification jumps straight to that
-    // conversation. A "call:incoming" notification needs no handling here —
-    // opening the app reconnects the socket (see AuthContext's AppState
-    // listener), and the call is still ringing server-side within its
-    // window, so CallOverlay picks it up on its own.
-    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data as { type?: string; conversationId?: string };
+    if (!user) return;
+    let active = true;
+    async function handle(response: Notifications.NotificationResponse | null) {
+      if (!response) return;
+      const data = (response.notification.request.content.data ?? {}) as { type?: string; conversationId?: string };
       if (data.type === 'message:new' && data.conversationId) {
-        router.push({ pathname: '/conversation/[id]', params: { id: data.conversationId } });
+        // A notification can belong to an account previously signed in here.
+        try {
+          const { conversations } = await api.listConversations();
+          const match = conversations.find((c) => c.id === data.conversationId);
+          if (active && match) router.push({ pathname: '/conversation/[id]', params: { id: match.id, name: match.other.displayName } });
+        } catch { /* Keep the inbox available when offline. */ }
       }
-    });
-    return () => subscription.remove();
-  }, []);
+      if (active) await Notifications.clearLastNotificationResponseAsync();
+    }
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => { void handle(response); });
+    void Notifications.getLastNotificationResponseAsync().then(handle).catch(console.warn);
+    return () => { active = false; subscription.remove(); };
+  }, [user?.id]);
 
   if (isLoading) return null;
 
   const stack = (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack screenOptions={{ headerShown: false, headerStyle: { backgroundColor: theme.background }, headerTintColor: theme.text, headerShadowVisible: false, contentStyle: { backgroundColor: theme.background } }}>
       <Stack.Protected guard={!user}>
         <Stack.Screen name="(auth)" />
       </Stack.Protected>
@@ -57,7 +66,7 @@ function RootNavigator() {
   // make sense once signed in — the socket isn't authenticated otherwise.
   if (!user) return stack;
   return (
-    <CallsProvider>
+    <CallsProvider key={user.id}>
       {stack}
       <CallOverlay />
     </CallsProvider>

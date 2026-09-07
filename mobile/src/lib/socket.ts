@@ -4,6 +4,9 @@ import { API_URL } from './api';
 import { storage } from './storage';
 
 let socket: Socket | null = null;
+let generation = 0;
+let accountId: string | null = null;
+export function socketBelongsTo(userId: string) { return accountId === userId; }
 
 export function getSocket(): Socket {
   if (!socket) {
@@ -12,16 +15,22 @@ export function getSocket(): Socket {
   return socket;
 }
 
-export async function connectSocket() {
+export async function connectSocket(userId: string) {
+  const attempt = generation;
   const s = getSocket();
   if (!s.connected) {
-    s.auth = { token: await storage.getToken() };
+    const token = await storage.getToken();
+    if (attempt !== generation || !token) return s;
+    accountId = userId;
+    s.auth = { token };
     s.connect();
   }
   return s;
 }
 
 export function disconnectSocket() {
+  generation++;
+  accountId = null;
   socket?.disconnect();
   socket = null;
 }

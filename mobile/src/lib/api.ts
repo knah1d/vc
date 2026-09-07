@@ -1,12 +1,17 @@
 import { storage } from './storage';
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
 // Expo inlines any env var prefixed EXPO_PUBLIC_ at build time (the mobile
 // equivalent of Vite's import.meta.env.VITE_* in the web app).
-export const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000').replace(/\/$/, '');
+const devHost = Constants.expoConfig?.hostUri?.split(':')[0];
+export const API_URL = (process.env.EXPO_PUBLIC_API_URL || (__DEV__ && devHost ? `http://${devHost}:4000` : Platform.OS === 'web' ? 'http://localhost:4000' : '')).replace(/\/$/, '');
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  if (!API_URL) throw new Error('Set EXPO_PUBLIC_API_URL to your backend URL and rebuild the app.');
   const token = await storage.getToken();
   const res = await fetch(`${API_URL}${path}`, {
+    signal: AbortSignal.timeout(15000),
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -41,6 +46,7 @@ export interface RemoteConversation {
 
 export interface RemoteMessage {
   id: string;
+  clientId?: string | null;
   senderId: string;
   body: string;
   createdAt: string;
@@ -60,8 +66,8 @@ export const api = {
       body: JSON.stringify({ otherEmail }),
     }),
   listConversations: () => request<{ conversations: RemoteConversation[] }>('/conversations'),
-  listMessages: (conversationId: string) =>
-    request<{ messages: RemoteMessage[] }>(`/conversations/${conversationId}/messages`),
+  listMessages: (conversationId: string, before?: string) =>
+    request<{ messages: RemoteMessage[] }>(`/conversations/${conversationId}/messages?limit=100${before ? `&before=${encodeURIComponent(before)}` : ''}`),
   markRead: (conversationId: string) =>
     request<{ ok: true }>(`/conversations/${conversationId}/read`, { method: 'POST' }),
   callStatus: () => request<{ configured: boolean }>('/video/status'),

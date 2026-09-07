@@ -24,40 +24,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   userRef.current = user;
 
   useEffect(() => {
-    storage.getUser().then((stored) => {
-      setUser(stored);
-      setIsLoading(false);
-      if (stored) {
-        connectSocket();
-        void registerForPushNotifications();
-      }
-    });
+    let active = true;
+    Promise.all([storage.getUser(), storage.getToken()])
+      .then(([stored, token]) => { if (active) setUser(token ? stored : null); })
+      .catch(() => { if (active) setUser(null); })
+      .finally(() => { if (active) setIsLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    let flushing = false;
+    const accountId = user.id;
+    async function flush() {
+      if (flushing || !active) return;
+      flushing = true;
+      try { await flushOutbox(accountId, () => active && userRef.current?.id === accountId); }
+      catch (error) { console.warn('Outbox sync failed', error); }
+      finally { flushing = false; }
+    }
 
     // Any pending/failed outbox messages get resent as soon as the socket is
     // (re)connected — covers a dropped ack, a lost connection mid-send, or the
     // app coming back from being backgrounded.
     const socket = getSocket();
-    socket.on('connect', flushOutbox);
+    socket.on('connect', flush);
+    void connectSocket(accountId).catch(console.warn);
+    void registerForPushNotifications();
 
     // A backgrounded RN app can have its socket silently die; reconnect the
     // instant the app is foregrounded again rather than waiting on a timeout.
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active' && userRef.current) connectSocket();
+      if (state === 'active' && active) {
+        void connectSocket(accountId).then(() => flush()).catch(console.warn);
+      }
     });
 
     return () => {
-      socket.off('connect', flushOutbox);
+      active = false;
+      socket.off('connect', flush);
       subscription.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [user?.id]);
 
   async function persist(auth: { token: string; user: StoredUser }) {
     await storage.setToken(auth.token);
     await storage.setUser(auth.user);
     setUser(auth.user);
-    await connectSocket();
-    void registerForPushNotifications();
   }
 
   async function login(email: string, password: string) {
@@ -69,11 +84,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function logout() {
+    userRef.current = null;
+    disconnectSocket();
     await unregisterForPushNotifications();
     await storage.clearToken();
     await storage.clearUser();
     setUser(null);
-    disconnectSocket();
   }
 
   return (
