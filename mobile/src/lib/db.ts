@@ -70,6 +70,11 @@ async function openDb(userId: string) {
   } catch {
     // Already present.
   }
+  try {
+    await database.execAsync(`ALTER TABLE messages ADD COLUMN reactions TEXT NOT NULL DEFAULT '[]'`);
+  } catch {
+    // Already present.
+  }
   return database;
 }
 
