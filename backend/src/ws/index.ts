@@ -85,6 +85,39 @@ export function createWsServer(httpServer: HttpServer) {
       }
     });
 
+    // Reacting again with the same emoji removes it; a different emoji replaces it.
+    socket.on("message:react", async (payload, ack) => {
+      const reply = typeof ack === "function" ? ack : () => {};
+      try {
+        const { messageId, emoji } = z.object({ messageId: z.string().min(1), emoji: z.string().min(1).max(8) }).parse(payload);
+        const message = await prisma.message.findUnique({ where: { id: messageId }, include: { conversation: true } });
+        if (!message) return reply({ error: "Message not found" });
+        const conversation = message.conversation;
+        if (conversation.userAId !== userId && conversation.userBId !== userId) return reply({ error: "Message not found" });
+
+        const existing = await prisma.messageReaction.findUnique({ where: { messageId_userId: { messageId, userId } } });
+        if (existing && existing.emoji === emoji) {
+          await prisma.messageReaction.delete({ where: { id: existing.id } });
+        } else {
+          await prisma.messageReaction.upsert({
+            where: { messageId_userId: { messageId, userId } },
+            update: { emoji },
+            create: { messageId, userId, emoji },
+          });
+        }
+
+        const reactions = await prisma.messageReaction.findMany({ where: { messageId }, select: { userId: true, emoji: true } });
+        const otherId = conversation.userAId === userId ? conversation.userBId : conversation.userAId;
+        const out = { messageId, conversationId: conversation.id, reactions };
+        for (const participantId of [userId, otherId]) {
+          for (const socketId of onlineUsers.get(participantId) ?? []) io.to(socketId).emit("message:reaction", out);
+        }
+        reply({ ok: true });
+      } catch (error) {
+        reply({ error: error instanceof z.ZodError ? "Invalid reaction." : "Could not react to the message." });
+      }
+    });
+
     socket.on("typing", async ({ conversationId, isTyping }) => {
       const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } });
       if (!conversation || (conversation.userAId !== userId && conversation.userBId !== userId)) return;

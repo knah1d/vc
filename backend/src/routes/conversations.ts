@@ -88,6 +88,7 @@ conversationsRouter.get("/:id/messages", async (req: AuthedRequest, res) => {
     where: { conversationId: conversation.id },
     orderBy: { createdAt: "desc" },
     take: limit,
+    include: { reactions: { select: { userId: true, emoji: true } } },
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });
 
