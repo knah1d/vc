@@ -13,6 +13,10 @@
     },
     "preview": {
       "distribution": "internal",
+      "env": {
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true",
+        "EXPO_PUBLIC_API_URL": "https://vc-08fc.onrender.com"
+      },
       "android": {
         "buildType": "apk"
       }
