@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -7,7 +7,6 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useCallsContext } from '@/context/CallsContext';
 import { useTheme } from '@/hooks/use-theme';
-import { clearNativeCall, showNativeIncomingCall } from '@/lib/callkeep';
 import { db } from '@/lib/db';
 
 import { CallScreen } from './CallScreen';
@@ -28,20 +27,6 @@ export function CallOverlay() {
       if (match) setOtherName(match.other_name);
     });
   }, [conversationId]);
-
-  // Surfaces the native (lock-screen-visible) ring alongside our in-app modal
-  // for an incoming call, and dismisses it as soon as that call stops being
-  // "incoming" — whether because it was answered/declined in-app or ended.
-  const nativeShownFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (calls.call?.phase === 'incoming' && nativeShownFor.current !== calls.call.callId) {
-      nativeShownFor.current = calls.call.callId;
-      showNativeIncomingCall(calls.call.callId, otherName, calls.call.mode === 'video');
-    } else if (calls.call?.phase !== 'incoming' && nativeShownFor.current) {
-      clearNativeCall(nativeShownFor.current);
-      nativeShownFor.current = null;
-    }
-  }, [calls.call, otherName]);
 
   useEffect(() => {
     if (calls.notice) {

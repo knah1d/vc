@@ -8,12 +8,10 @@ import { useColorScheme } from 'react-native';
 import { CallOverlay } from '@/components/CallOverlay';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { CallsProvider } from '@/context/CallsContext';
-import { setupCallKeep } from '@/lib/callkeep';
 import { initSentry, Sentry } from '@/lib/sentry';
 
 // Must run once before any LiveKit/WebRTC usage.
 registerGlobals();
-void setupCallKeep();
 initSentry();
 
 SplashScreen.preventAutoHideAsync();

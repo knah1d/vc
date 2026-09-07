@@ -3,7 +3,6 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
-    "@config-plugins/react-native-callkeep": "^14.0.2",
     "@config-plugins/react-native-webrtc": "^15.0.2",
     "@expo/ui": "~57.0.16",
     "@livekit/react-native": "^2.12.0",
@@ -33,7 +32,6 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
-    "react-native-callkeep": "^4.3.16",
     "react-native-gesture-handler": "~2.32.0",
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",
