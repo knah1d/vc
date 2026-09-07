@@ -67,6 +67,11 @@ model Message {
   // as the same message instead of creating a duplicate.
   clientId       String?      @unique
   reactions      MessageReaction[]
+  // Optional photo/file attachment, stored externally (R2) — attachmentUrl is
+  // a plain public URL, not proxied through this server.
+  attachmentUrl  String?
+  attachmentType String? // "image" | "file"
+  attachmentName String? // original filename, for non-image downloads
 
   @@index([conversationId, createdAt])
 }

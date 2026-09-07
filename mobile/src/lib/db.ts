@@ -21,6 +21,9 @@ export interface LocalMessage {
   // Stored as a JSON string (SQLite has no array/JSON column type) — parse at
   // the UI boundary via parseReactions() below.
   reactions: string;
+  attachment_url: string | null;
+  attachment_type: string | null;
+  attachment_name: string | null;
 }
 
 export function parseReactions(raw: string | null | undefined): MessageReaction[] {
@@ -75,6 +78,13 @@ async function openDb(userId: string) {
   } catch {
     // Already present.
   }
+  for (const column of ['attachment_url', 'attachment_type', 'attachment_name']) {
+    try {
+      await database.execAsync(`ALTER TABLE messages ADD COLUMN ${column} TEXT`);
+    } catch {
+      // Already present.
+    }
+  }
   return database;
 }
 
@@ -118,13 +128,17 @@ export function dbForUser(userId: string) {
     const database = await getDb();
     for (const m of messages) {
       await database.runAsync(
-        `INSERT INTO messages (client_id, server_id, conversation_id, sender_id, body, created_at, status, read_at)
-         VALUES ($client_id, $server_id, $conversation_id, $sender_id, $body, $created_at, $status, $read_at)
+        `INSERT INTO messages (client_id, server_id, conversation_id, sender_id, body, created_at, status, read_at, reactions, attachment_url, attachment_type, attachment_name)
+         VALUES ($client_id, $server_id, $conversation_id, $sender_id, $body, $created_at, $status, $read_at, $reactions, $attachment_url, $attachment_type, $attachment_name)
          ON CONFLICT(client_id) DO UPDATE SET
            server_id = excluded.server_id,
            created_at = excluded.created_at,
            status = excluded.status,
-           read_at = COALESCE(excluded.read_at, read_at)`,
+           read_at = COALESCE(excluded.read_at, read_at),
+           reactions = excluded.reactions,
+           attachment_url = excluded.attachment_url,
+           attachment_type = excluded.attachment_type,
+           attachment_name = excluded.attachment_name`,
         {
           $client_id: m.client_id,
           $server_id: m.server_id,
@@ -133,7 +147,11 @@ export function dbForUser(userId: string) {
           $body: m.body,
           $created_at: m.created_at,
           $status: m.status,
+          $reactions: m.reactions,
           $read_at: m.read_at,
+          $attachment_url: m.attachment_url,
+          $attachment_type: m.attachment_type,
+          $attachment_name: m.attachment_name,
         }
       );
     }
@@ -177,6 +195,17 @@ export function dbForUser(userId: string) {
       `UPDATE messages SET read_at = $read_at
        WHERE conversation_id = $conversation_id AND sender_id = $sender_id AND read_at IS NULL`,
       { $conversation_id: conversationId, $sender_id: senderId, $read_at: readAt }
+    );
+  },
+
+  // Reactions arrive keyed by the server message id (the "message:reaction"
+  // socket event), not the local client_id — messages sent by the other side
+  // never had a pending client_id in the first place, so server_id is the key.
+  async setReactionsByServerId(serverId: string, reactionsJson: string) {
+    const database = await getDb();
+    await database.runAsync(
+      `UPDATE messages SET reactions = $reactions WHERE server_id = $server_id`,
+      { $reactions: reactionsJson, $server_id: serverId }
     );
   },
   };

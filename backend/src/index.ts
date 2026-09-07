@@ -5,6 +5,7 @@ import { createServer } from "http";
 import { authRouter } from "./routes/auth.js";
 import { conversationsRouter } from "./routes/conversations.js";
 import { devicesRouter } from "./routes/devices.js";
+import { uploadsRouter } from "./routes/uploads.js";
 import { videoRouter } from "./routes/video.js";
 import { createWsServer } from "./ws/index.js";
 
@@ -17,6 +18,7 @@ app.use("/auth", authRouter);
 app.use("/conversations", conversationsRouter);
 app.use("/video", videoRouter);
 app.use("/devices", devicesRouter);
+app.use("/uploads", uploadsRouter);
 
 const httpServer = createServer(app);
 app.set("io", createWsServer(httpServer));

@@ -43,12 +43,21 @@ export function createWsServer(httpServer: HttpServer) {
     });
 
     // --- Messaging ---
+    const sendMessageSchema = z
+      .object({
+        conversationId: z.string().min(1),
+        body: z.string().max(10000).default(""),
+        clientId: z.string().min(1).optional(),
+        attachmentUrl: z.string().url().optional(),
+        attachmentType: z.enum(["image", "file"]).optional(),
+        attachmentName: z.string().max(200).optional(),
+      })
+      .refine((v) => v.body.trim().length > 0 || v.attachmentUrl, { message: "A message needs text or an attachment." });
+
     socket.on("message:send", async (payload, ack) => {
       const reply = typeof ack === "function" ? ack : () => {};
       try {
-        const { conversationId, body, clientId } = z
-          .object({ conversationId: z.string().min(1), body: z.string().min(1), clientId: z.string().min(1).optional() })
-          .parse(payload);
+        const { conversationId, body, clientId, attachmentUrl, attachmentType, attachmentName } = sendMessageSchema.parse(payload);
 
         const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } });
         if (!conversation || (conversation.userAId !== userId && conversation.userBId !== userId)) {
@@ -61,7 +70,11 @@ export function createWsServer(httpServer: HttpServer) {
         if (existing && (existing.senderId !== userId || existing.conversationId !== conversationId)) {
           return reply({ error: "Invalid message identifier." });
         }
-        const message = existing ?? (await prisma.message.create({ data: { conversationId, senderId: userId, body, clientId } }));
+        const message =
+          existing ??
+          (await prisma.message.create({
+            data: { conversationId, senderId: userId, body, clientId, attachmentUrl, attachmentType, attachmentName },
+          }));
 
         if (!existing) {
           const otherId = conversation.userAId === userId ? conversation.userBId : conversation.userAId;
@@ -71,9 +84,10 @@ export function createWsServer(httpServer: HttpServer) {
           }
           if (otherSockets.size === 0) {
             const sender = await prisma.user.findUnique({ where: { id: userId }, select: { displayName: true } });
+            const preview = body.trim() ? (body.length > 120 ? `${body.slice(0, 117)}...` : body) : attachmentType === "image" ? "📷 Photo" : attachmentUrl ? "📎 File" : "";
             void pushToUser(otherId, {
               title: sender?.displayName ?? "New message",
-              body: body.length > 120 ? `${body.slice(0, 117)}...` : body,
+              body: preview,
               sound: "default",
               data: { type: "message:new", conversationId },
             });

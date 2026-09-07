@@ -12,6 +12,12 @@ interface SendAck {
   error?: string;
 }
 
+export interface OutgoingAttachment {
+  url: string;
+  type: 'image' | 'file';
+  name?: string;
+}
+
 const ACK_TIMEOUT_MS = 8000;
 
 // Emits one message over the socket, keyed by its client-generated id so a
@@ -27,11 +33,17 @@ export function subscribeOutbox(listener: () => void) {
   return () => { listeners.delete(listener); };
 }
 
-export function sendMessage(userId: string, conversationId: string, clientId: string, body: string) {
+export function sendMessage(
+  userId: string,
+  conversationId: string,
+  clientId: string,
+  body: string,
+  attachment?: OutgoingAttachment
+) {
   const key = `${userId}:${clientId}`;
   const pending = inFlight.get(key);
   if (pending) return pending;
-  const request = performSend(userId, conversationId, clientId, body).finally(() => {
+  const request = performSend(userId, conversationId, clientId, body, attachment).finally(() => {
     inFlight.delete(key);
     listeners.forEach((listener) => listener());
   });
@@ -43,7 +55,8 @@ async function performSend(
   userId: string,
   conversationId: string,
   clientId: string,
-  body: string
+  body: string,
+  attachment?: OutgoingAttachment
 ): Promise<'sent' | 'failed'> {
   const socket = getSocket();
   const db = dbForUser(userId);
@@ -53,6 +66,9 @@ async function performSend(
       conversationId,
       body,
       clientId,
+      attachmentUrl: attachment?.url,
+      attachmentType: attachment?.type,
+      attachmentName: attachment?.name,
     });
     if (res.message) {
       await db.setMessageStatus(clientId, 'sent', res.message.id);
@@ -76,11 +92,19 @@ export async function flushOutbox(userId: string, isCurrent: () => boolean) {
     if (m.sender_id !== userId) continue;
     await db.setMessageStatus(m.client_id, 'sending');
     if (!isCurrent()) return;
-    await sendMessage(userId, m.conversation_id, m.client_id, m.body);
+    const attachment: OutgoingAttachment | undefined = m.attachment_url
+      ? { url: m.attachment_url, type: (m.attachment_type as 'image' | 'file') ?? 'file', name: m.attachment_name ?? undefined }
+      : undefined;
+    await sendMessage(userId, m.conversation_id, m.client_id, m.body, attachment);
   }
 }
 
-export function localMessage(conversationId: string, senderId: string, body: string): LocalMessage {
+export function localMessage(
+  conversationId: string,
+  senderId: string,
+  body: string,
+  attachment?: OutgoingAttachment
+): LocalMessage {
   return {
     client_id: newClientId(),
     server_id: null,
@@ -90,5 +114,9 @@ export function localMessage(conversationId: string, senderId: string, body: str
     created_at: new Date().toISOString(),
     status: 'sending',
     read_at: null,
+    reactions: '[]',
+    attachment_url: attachment?.url ?? null,
+    attachment_type: attachment?.type ?? null,
+    attachment_name: attachment?.name ?? null,
   };
 }

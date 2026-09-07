@@ -1,6 +1,9 @@
+import * as DocumentPicker from 'expo-document-picker';
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, AppState, FlatList, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
@@ -20,11 +23,13 @@ import { useAuth } from '@/context/AuthContext';
 import { useCallsContext } from '@/context/CallsContext';
 import { useTheme } from '@/hooks/use-theme';
 import { api, type RemoteMessage } from '@/lib/api';
-import { dbForUser, type LocalMessage } from '@/lib/db';
-import { localMessage, sendMessage, subscribeOutbox } from '@/lib/outbox';
+import { dbForUser, parseReactions, type LocalMessage } from '@/lib/db';
+import { localMessage, sendMessage, subscribeOutbox, type OutgoingAttachment } from '@/lib/outbox';
 import { getSocket } from '@/lib/socket';
+import { uploadAttachment } from '@/lib/upload';
 
 const TYPING_STOP_DELAY_MS = 2000;
+const QUICK_REACTIONS = ['❤️', '😂', '😮', '😢', '👍', '🙏'];
 
 // Single check = sent, double check = read. The moment a message flips to
 // "read" (not on initial render of an already-read history message): the
@@ -83,6 +88,9 @@ export default function ConversationScreen() {
   const [draft, setDraft] = useState('');
   const [otherTyping, setOtherTyping] = useState(false);
   const [connected, setConnected] = useState(getSocket().connected);
+  const [reactingTo, setReactingTo] = useState<string | null>(null);
+  const [attachSheetOpen, setAttachSheetOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const listRef = useRef<FlatList<LocalMessage>>(null);
   const typingStopTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const wasTypingRef = useRef(false);
@@ -142,9 +150,15 @@ export default function ConversationScreen() {
       await db.markSentMessagesRead(id, user.id, readAt);
       if (!cancelled) setMessages(await db.listMessages(id));
     }
+    async function onMessageReaction({ conversationId, messageId, reactions }: { conversationId: string; messageId: string; reactions: { userId: string; emoji: string }[] }) {
+      if (conversationId !== id) return;
+      await db.setReactionsByServerId(messageId, JSON.stringify(reactions));
+      if (!cancelled) setMessages(await db.listMessages(id));
+    }
     socket.on('message:new', onNewMessage);
     socket.on('typing', onTyping);
     socket.on('message:read', onMessageRead);
+    socket.on('message:reaction', onMessageReaction);
     function reconnect() { setConnected(true); void load(); }
     function disconnect() { setConnected(false); setOtherTyping(false); }
     socket.on('connect', reconnect);
@@ -156,6 +170,7 @@ export default function ConversationScreen() {
       socket.off('message:new', onNewMessage);
       socket.off('typing', onTyping);
       socket.off('message:read', onMessageRead);
+      socket.off('message:reaction', onMessageReaction);
       socket.off('connect', reconnect);
       socket.off('disconnect', disconnect);
       foreground.remove();
@@ -190,7 +205,16 @@ export default function ConversationScreen() {
       created_at: m.createdAt,
       status: 'sent',
       read_at: m.readAt ?? null,
+      reactions: JSON.stringify(m.reactions ?? []),
+      attachment_url: m.attachmentUrl ?? null,
+      attachment_type: m.attachmentType ?? null,
+      attachment_name: m.attachmentName ?? null,
     };
+  }
+
+  function reactTo(serverId: string, emoji: string) {
+    setReactingTo(null);
+    getSocket().emit('message:react', { messageId: serverId, emoji });
   }
 
   async function handleSend() {
@@ -207,6 +231,52 @@ export default function ConversationScreen() {
     setMessages(await db.listMessages(id));
     await sendMessage(user.id, id, message.client_id, message.body);
     setMessages(await db.listMessages(id));
+  }
+
+  async function sendAttachment(localUri: string, filename: string, contentType: string, kind: 'image' | 'file') {
+    if (!id || !user) return;
+    setAttachSheetOpen(false);
+    setUploading(true);
+    try {
+      const publicUrl = await uploadAttachment(localUri, filename, contentType);
+      const attachment: OutgoingAttachment = { url: publicUrl, type: kind, name: filename };
+      const caption = draft.trim();
+      setDraft('');
+      const message = localMessage(id, user.id, caption, attachment);
+      await db.upsertMessages([message]);
+      setMessages(await db.listMessages(id));
+      await sendMessage(user.id, id, message.client_id, message.body, attachment);
+      setMessages(await db.listMessages(id));
+    } catch (error) {
+      Alert.alert('Upload failed', error instanceof Error ? error.message : 'Could not send the attachment.');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function pickPhoto(fromCamera: boolean) {
+    setAttachSheetOpen(false);
+    const permission = fromCamera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission needed', `Allow ${fromCamera ? 'camera' : 'photo library'} access to attach a photo.`);
+      return;
+    }
+    const result = fromCamera
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7 })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    await sendAttachment(asset.uri, asset.fileName ?? 'photo.jpg', asset.mimeType ?? 'image/jpeg', 'image');
+  }
+
+  async function pickFile() {
+    setAttachSheetOpen(false);
+    const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    await sendAttachment(asset.uri, asset.name, asset.mimeType ?? 'application/octet-stream', 'file');
   }
 
   return (
@@ -240,29 +310,58 @@ export default function ConversationScreen() {
             onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
             renderItem={({ item }) => {
               const mine = item.sender_id === user?.id;
+              const reactions = parseReactions(item.reactions);
+              const distinctEmoji = [...new Set(reactions.map((r) => r.emoji))];
               return (
                 <View style={[styles.bubbleRow, mine && styles.bubbleRowMine]}>
-                  <View
+                  <Pressable
+                    disabled={!item.server_id}
+                    onLongPress={() => item.server_id && setReactingTo(item.server_id)}
+                    delayLongPress={220}
                     style={[
                       styles.bubble,
                       { backgroundColor: mine ? theme.tint : theme.backgroundElement, borderBottomRightRadius: mine ? 6 : 22, borderBottomLeftRadius: mine ? 22 : 6 },
                     ]}
                   >
+                    {item.attachment_type === 'image' && item.attachment_url && (
+                      <Image source={{ uri: item.attachment_url }} style={styles.attachmentImage} contentFit="cover" />
+                    )}
+                    {item.attachment_type === 'file' && item.attachment_url && (
+                      <Pressable
+                        onPress={() => Linking.openURL(item.attachment_url!)}
+                        style={[styles.filePill, { borderColor: mine ? 'rgba(255,255,255,0.4)' : theme.border }]}
+                      >
+                        <ThemedText style={mine ? styles.bubbleTextMine : undefined}>📎</ThemedText>
+                        <ThemedText numberOfLines={1} style={[styles.fileName, mine ? styles.bubbleTextMine : undefined]}>
+                          {item.attachment_name ?? 'File'}
+                        </ThemedText>
+                      </Pressable>
+                    )}
                     {/* Reserve a little room after the text so the time/tick corner
                         overlay (below) doesn't sit on top of the last word for
                         typical message lengths — the standard chat-bubble look. */}
-                    <ThemedText style={[mine ? styles.bubbleTextMine : undefined, styles.bubbleTextPad]}>
-                      {item.body}
-                    </ThemedText>
-                    <View style={styles.metaFloating}>
-                      <ThemedText style={[styles.metaInline, { color: mine ? '#F0E8FF' : theme.textSecondary }]}>
+                    {item.body.length > 0 && (
+                      <ThemedText style={[mine ? styles.bubbleTextMine : undefined, styles.bubbleTextPad]}>
+                        {item.body}
+                      </ThemedText>
+                    )}
+                    <View style={[styles.metaFloating, item.attachment_type === 'image' && styles.metaFloatingOnImage]}>
+                      <ThemedText style={[styles.metaInline, { color: item.attachment_type === 'image' ? '#fff' : mine ? '#F0E8FF' : theme.textSecondary }]}>
                         {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </ThemedText>
                       {mine && (item.status === 'sent' || item.status === 'sending') && (
                         <MessageTick read={Boolean(item.read_at)} />
                       )}
                     </View>
-                  </View>
+                    {distinctEmoji.length > 0 && (
+                      <View style={[styles.reactionPill, { borderColor: theme.border, backgroundColor: theme.background }, mine ? { left: 6 } : { right: 6 }]}>
+                        <ThemedText style={styles.reactionPillText}>
+                          {distinctEmoji.slice(0, 3).join('')}
+                          {reactions.length > 1 ? ` ${reactions.length}` : ''}
+                        </ThemedText>
+                      </View>
+                    )}
+                  </Pressable>
                   {item.status === 'sending' && (
                     <ThemedText type="small" themeColor="textSecondary">
                       Sending…
@@ -276,6 +375,23 @@ export default function ConversationScreen() {
             }}
           />
 
+          <Modal visible={reactingTo !== null} transparent animationType="fade" onRequestClose={() => setReactingTo(null)}>
+            <Pressable style={styles.reactionBackdrop} onPress={() => setReactingTo(null)}>
+              <View style={[styles.reactionSheet, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+                {QUICK_REACTIONS.map((emoji) => (
+                  <Pressable
+                    key={emoji}
+                    hitSlop={6}
+                    onPress={() => reactingTo && reactTo(reactingTo, emoji)}
+                    style={styles.reactionOption}
+                  >
+                    <ThemedText style={styles.reactionOptionText}>{emoji}</ThemedText>
+                  </Pressable>
+                ))}
+              </View>
+            </Pressable>
+          </Modal>
+
           <View style={styles.typingRow}>
             {otherTyping && (
               <ThemedText type="small" themeColor="textSecondary">
@@ -284,8 +400,10 @@ export default function ConversationScreen() {
             )}
           </View>
 
+          {uploading && <ThemedText style={{ textAlign: 'center', fontSize: 12, color: theme.textSecondary }}>Uploading…</ThemedText>}
           {!connected && <ThemedText style={{ textAlign: 'center', fontSize: 12, color: theme.textSecondary }}>Offline · Your messages will send when you reconnect</ThemedText>}
           <View style={[styles.composer, { borderTopColor: theme.border, backgroundColor: theme.backgroundElement }]}>
+            <ActionButton label="Attach a photo or file" glyph="+" disabled={uploading} onPress={() => setAttachSheetOpen(true)} />
             <View style={styles.composerInput}>
               <FormInput
                 placeholder="Type a message"
@@ -299,6 +417,25 @@ export default function ConversationScreen() {
             </View>
             <ActionButton label="Send message" glyph="↑" disabled={!draft.trim()} onPress={() => { void handleSend(); }} />
           </View>
+
+          <Modal visible={attachSheetOpen} transparent animationType="fade" onRequestClose={() => setAttachSheetOpen(false)}>
+            <Pressable style={styles.reactionBackdrop} onPress={() => setAttachSheetOpen(false)}>
+              <View style={[styles.attachSheet, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+                <Pressable style={styles.attachOption} onPress={() => { void pickPhoto(false); }}>
+                  <ThemedText style={styles.attachOptionIcon}>🖼️</ThemedText>
+                  <ThemedText>Photo library</ThemedText>
+                </Pressable>
+                <Pressable style={styles.attachOption} onPress={() => { void pickPhoto(true); }}>
+                  <ThemedText style={styles.attachOptionIcon}>📸</ThemedText>
+                  <ThemedText>Camera</ThemedText>
+                </Pressable>
+                <Pressable style={styles.attachOption} onPress={() => { void pickFile(); }}>
+                  <ThemedText style={styles.attachOptionIcon}>📎</ThemedText>
+                  <ThemedText>File</ThemedText>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Modal>
         </SafeAreaView>
       </KeyboardAvoidingView>
     </AmbientScreen>
@@ -310,8 +447,61 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', gap: 6 },
   headerIcon: { fontSize: 20 },
   list: { padding: Spacing.three, gap: Spacing.two },
-  bubbleRow: { alignItems: 'flex-start', gap: 2 },
+  bubbleRow: { alignItems: 'flex-start', gap: 2, marginBottom: 6 },
   bubbleRowMine: { alignItems: 'flex-end' },
+  reactionPill: {
+    position: 'absolute',
+    bottom: -12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 999,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  reactionPillText: { fontSize: 12 },
+  reactionBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  reactionSheet: {
+    flexDirection: 'row',
+    justifyContent: 'space-evenly',
+    marginHorizontal: 16,
+    marginBottom: 24,
+    padding: 12,
+    borderRadius: 24,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  reactionOption: { padding: 6 },
+  reactionOptionText: { fontSize: 28 },
+  attachSheet: {
+    marginHorizontal: 16,
+    marginBottom: 24,
+    padding: 8,
+    borderRadius: 24,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  attachOption: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14 },
+  attachOptionIcon: { fontSize: 22 },
+  attachmentImage: {
+    width: 220,
+    height: 220,
+    borderRadius: 14,
+    marginBottom: 4,
+    backgroundColor: 'rgba(0,0,0,0.08)',
+  },
+  filePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 4,
+    maxWidth: 220,
+  },
+  fileName: { flexShrink: 1, fontSize: 13 },
   bubble: {
     position: 'relative',
     maxWidth: '80%',
@@ -329,6 +519,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+  },
+  metaFloatingOnImage: {
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
   },
   metaInline: { fontSize: 10 },
   tickWrap: { width: 16, height: 12, alignItems: 'center', justifyContent: 'center' },

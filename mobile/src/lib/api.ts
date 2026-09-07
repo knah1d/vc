@@ -51,6 +51,10 @@ export interface RemoteMessage {
   body: string;
   createdAt: string;
   readAt?: string | null;
+  reactions?: { userId: string; emoji: string }[];
+  attachmentUrl?: string | null;
+  attachmentType?: 'image' | 'file' | null;
+  attachmentName?: string | null;
 }
 
 export const api = {
@@ -81,4 +85,10 @@ export const api = {
     request<{ ok: true }>('/devices', { method: 'POST', body: JSON.stringify({ token, platform }) }),
   unregisterDevice: (token: string) =>
     request<{ ok: true }>(`/devices/${encodeURIComponent(token)}`, { method: 'DELETE' }),
+  uploadStatus: () => request<{ configured: boolean }>('/uploads/status'),
+  presignUpload: (filename: string, contentType: string) =>
+    request<{ uploadUrl: string; publicUrl: string }>('/uploads/presign', {
+      method: 'POST',
+      body: JSON.stringify({ filename, contentType }),
+    }),
 };

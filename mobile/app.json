@@ -50,6 +50,8 @@
       "expo-sqlite",
       "expo-secure-store",
       "expo-notifications",
+      "expo-image-picker",
+      "expo-document-picker",
       "@livekit/react-native-expo-plugin",
       "@config-plugins/react-native-webrtc",
       "expo-build-properties",
