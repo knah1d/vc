@@ -2,6 +2,7 @@ import type { PropsWithChildren } from 'react';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { ThemedText } from './themed-text';
 import { useTheme } from '@/hooks/use-theme';
+import { SymbolView } from 'expo-symbols';
 
 export function AmbientScreen({ children }: PropsWithChildren) {
   const theme = useTheme();
@@ -30,7 +31,7 @@ export function Avatar({ name, size = 52 }: { name: string; size?: number }) {
 export function ActionButton({ label, glyph, onPress, disabled, testID }: { label: string; glyph: string; onPress: () => void; disabled?: boolean; testID?: string }) {
   const theme = useTheme();
   return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled }} disabled={disabled} testID={testID} onPress={onPress} style={({ pressed }) => ({ minWidth: 46, minHeight: 46, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.backgroundSelected, opacity: disabled ? 0.4 : pressed ? 0.65 : 1 })}>
-    <ThemedText style={{ color: theme.tint, fontSize: 22, fontWeight: '600' }}>{glyph}</ThemedText>
+    <SymbolView name={glyph === '☎' ? { ios: 'phone', android: 'call', web: 'call' } : glyph === '▣' ? { ios: 'video', android: 'videocam', web: 'videocam' } : { ios: 'arrow.up', android: 'arrow_upward', web: 'arrow_upward' }} tintColor={theme.tint} size={22} />
   </Pressable>;
 }
 

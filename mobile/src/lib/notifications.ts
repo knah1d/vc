@@ -31,7 +31,7 @@ async function ensureAndroidChannel() {
 // backend, so it can reach us even when the app has no live socket
 // connection (backgrounded or fully killed). Safe to call on every login —
 // it no-ops quietly if permission is denied or no EAS project is configured.
-export async function registerForPushNotifications(): Promise<void> {
+export async function registerForPushNotifications(isCurrent: () => boolean = () => true): Promise<void> {
   try {
     await ensureAndroidChannel();
 
@@ -49,6 +49,7 @@ export async function registerForPushNotifications(): Promise<void> {
     }
 
     const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
+    if (!isCurrent()) return;
     await api.registerDevice(token, Platform.OS === 'ios' ? 'ios' : 'android');
     await storage.setDeviceToken(token);
   } catch (error) {

@@ -101,9 +101,9 @@ export default function ChatsScreen() {
 
   return (
     <AmbientScreen>
-      <SafeAreaView style={styles.flex} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={styles.flex}>
         <View style={styles.header}>
-          <View><ThemedText style={{ fontSize: 30, fontWeight: '800', letterSpacing: -1.5 }}>hush.</ThemedText><ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>A little space for your people.</ThemedText></View>
+          <View><ThemedText style={{ fontSize: 30, lineHeight: 38, fontWeight: '800', letterSpacing: -1.5 }}>hush.</ThemedText><ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>A little space for your people.</ThemedText></View>
           <Pressable accessibilityRole="button" accessibilityLabel="Log out" onPress={() => { void logout().catch((err) => setError(err.message)); }} style={{ alignItems: 'center', gap: 4 }}>
             <Avatar name={user?.displayName || 'You'} size={42} />
             <ThemedText themeColor="textSecondary" style={{ fontSize: 10 }}>Log out</ThemedText>

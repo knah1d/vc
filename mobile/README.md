@@ -1,56 +1,76 @@
-# Welcome to your Expo app 👋
+# Hush mobile
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Expo SDK 57 / React Native messaging, voice, and video app. Shared native styles
+provide lavender accents, translucent cards, light/dark palettes, and avatars.
 
-## Get started
+## Run locally
 
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+Use Node 22.13+ (Node 24 recommended for SQLite regression tests).
 
 ```bash
-npm run reset-project
+cd mobile
+npm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Create `.env` from `.env.example`. On a physical phone, set
+`EXPO_PUBLIC_API_URL=http://YOUR_COMPUTER_LAN_IP:4000` and use the same network.
+Leaving it blank in local development uses the Expo Metro host on port 4000.
+Android emulators can use `http://10.0.2.2:4000`.
+Production builds require an explicit public HTTPS backend URL.
 
-### Other setup steps
+Start the backend using the repository's root README. The backend's LiveKit URL
+must also be reachable **from the phone**: localhost refers to the phone, not your
+computer. A public wss:// LiveKit endpoint is simplest. Self-hosted servers need
+reachable media ports and appropriate firewall/TURN configuration.
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+Build and install a native development client (Android SDK required):
 
-## Learn more
+```bash
+npx expo run:android
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+On macOS with Xcode, use `npx expo run:ios`. Alternatively, build/install an EAS
+development client using the existing development profile. Then run:
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+```bash
+npx expo start --dev-client
+```
 
-## Join the community
+Rebuild the native client after native plugin changes, including the LiveKit
+plugin added in this update. Expo Go cannot run the native calling SDK.
+See [LiveKit's Expo setup](https://docs.livekit.io/transport/sdk-platforms/expo/).
+Use the separate `frontend/` app for the supported browser experience.
 
-Join our community of developers creating universal apps.
+## Messaging and calls
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- Each account has a separate SQLite cache/outbox. Late old-session writes stay
+  in that account's database.
+- The old shared `hush.db` is untouched but no longer read. Server history downloads
+  again. Legacy unsent messages are not automatically imported because ownership
+  cannot safely be assumed.
+- Client IDs reconcile sent messages and retries with server history.
+- Reconnect/foreground refresh fills missed history pages and retries pending sends.
+- Push requires EAS configuration, platform push credentials, and permission.
+  Permission denial does not block foreground calls.
+- Opening the app or tapping a call notification queries the server for a
+  still-ringing invite. Ended/expired calls are not revived.
+- Calls ring for 30 seconds. Controls are **in-app**. CallKeep was removed;
+  OS lock-screen answering and guaranteed killed-app ringing are not implemented.
+  Those require separate native calling/background delivery integration.
+
+## Checks
+
+```bash
+npm run typecheck
+npm test
+npx expo export --platform android
+```
+
+Local-data tests execute production database/outbox code with in-memory SQLite.
+Backend call-state tests live in `backend/tests`.
+This update introduces no Prisma schema changes or migrations.
+
+Before release, test on two devices: account switching, offline sends, more than
+100 missed messages, notification taps before/after call expiry, voice microphone
+access, video on both sides, mute/camera toggles, decline/cancel/hangup. Check small
+screens, large text, keyboards, and both color schemes.

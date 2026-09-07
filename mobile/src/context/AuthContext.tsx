@@ -21,6 +21,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<StoredUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const userRef = useRef(user);
+  const pushRegistration = useRef<Promise<void>>(Promise.resolve());
   userRef.current = user;
 
   useEffect(() => {
@@ -51,7 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const socket = getSocket();
     socket.on('connect', flush);
     void connectSocket(accountId).catch(console.warn);
-    void registerForPushNotifications();
+    pushRegistration.current = registerForPushNotifications(() => active && userRef.current?.id === accountId);
 
     // A backgrounded RN app can have its socket silently die; reconnect the
     // instant the app is foregrounded again rather than waiting on a timeout.
@@ -85,11 +86,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function logout() {
     userRef.current = null;
-    disconnectSocket();
-    await unregisterForPushNotifications();
-    await storage.clearToken();
-    await storage.clearUser();
+    setIsLoading(true);
     setUser(null);
+    disconnectSocket();
+    try {
+      await pushRegistration.current;
+      await unregisterForPushNotifications();
+      await storage.clearToken();
+      await storage.clearUser();
+    } finally { setIsLoading(false); }
   }
 
   return (
