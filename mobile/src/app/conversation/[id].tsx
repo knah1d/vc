@@ -1,7 +1,16 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, AppState, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { AppState, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Animated, {
+  Easing,
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { FormInput } from '@/components/form';
 import { ThemedText } from '@/components/themed-text';
@@ -17,25 +26,49 @@ import { getSocket } from '@/lib/socket';
 
 const TYPING_STOP_DELAY_MS = 2000;
 
-// Single check = sent, double check = read. Pops in with a small scale+fade
-// the moment a message flips to "read" — not on initial render of an already-
-// read message loaded from history.
+// Single check = sent, double check = read. The moment a message flips to
+// "read" (not on initial render of an already-read history message): the
+// ticks bounce with a little overshoot, sweep from gray to accent color, and
+// a soft ring pulses outward behind them — a small "confirmed" flourish.
 function MessageTick({ read }: { read: boolean }) {
-  const pop = useRef(new Animated.Value(1)).current;
+  const colorProgress = useSharedValue(read ? 1 : 0);
+  const scale = useSharedValue(1);
+  const ringScale = useSharedValue(0);
+  const ringOpacity = useSharedValue(0);
   const wasRead = useRef(read);
 
   useEffect(() => {
     if (read && !wasRead.current) {
-      pop.setValue(0.5);
-      Animated.spring(pop, { toValue: 1, useNativeDriver: true, friction: 5, tension: 120 }).start();
+      colorProgress.value = withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) });
+      scale.value = withSequence(
+        withTiming(1.55, { duration: 160, easing: Easing.out(Easing.quad) }),
+        withSpring(1, { damping: 6, stiffness: 180 })
+      );
+      ringScale.value = 0.4;
+      ringOpacity.value = 0.5;
+      ringScale.value = withTiming(2.6, { duration: 500, easing: Easing.out(Easing.quad) });
+      ringOpacity.value = withTiming(0, { duration: 500 });
+    } else if (!read) {
+      colorProgress.value = 0;
+      scale.value = 1;
     }
     wasRead.current = read;
-  }, [read, pop]);
+  }, [read, colorProgress, scale, ringScale, ringOpacity]);
+
+  const tickStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    color: interpolateColor(colorProgress.value, [0, 1], ['rgba(255,255,255,0.7)', '#7CD4FF']),
+  }));
+  const ringStyle = useAnimatedStyle(() => ({
+    opacity: ringOpacity.value,
+    transform: [{ scale: ringScale.value }],
+  }));
 
   return (
-    <Animated.Text style={[styles.tick, read && styles.tickRead, { transform: [{ scale: pop }] }]}>
-      {read ? '✓✓' : '✓'}
-    </Animated.Text>
+    <View style={styles.tickWrap}>
+      <Animated.View pointerEvents="none" style={[styles.tickRing, ringStyle]} />
+      <Animated.Text style={[styles.tick, tickStyle]}>{read ? '✓✓' : '✓'}</Animated.Text>
+    </View>
   );
 }
 
@@ -192,12 +225,13 @@ export default function ConversationScreen() {
       />
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior="padding"
         keyboardVerticalOffset={Platform.select({ ios: 90, default: 0 })}
       >
         <SafeAreaView style={styles.flex} edges={['bottom']}>
           <FlatList
             ref={listRef}
+            style={styles.flex}
             data={messages}
             keyExtractor={(item) => item.client_id}
             contentContainerStyle={styles.list}
@@ -214,22 +248,20 @@ export default function ConversationScreen() {
                       { backgroundColor: mine ? theme.tint : theme.backgroundElement, borderBottomRightRadius: mine ? 6 : 22, borderBottomLeftRadius: mine ? 22 : 6 },
                     ]}
                   >
-                    {/* Nesting the time/tick as inline Text (not a separate row) lets them
-                        sit right after the last word, wrapping onto their own line only
-                        when there's no room — the standard chat-bubble look. */}
-                    <ThemedText style={mine ? styles.bubbleTextMine : undefined}>
+                    {/* Reserve a little room after the text so the time/tick corner
+                        overlay (below) doesn't sit on top of the last word for
+                        typical message lengths — the standard chat-bubble look. */}
+                    <ThemedText style={[mine ? styles.bubbleTextMine : undefined, styles.bubbleTextPad]}>
                       {item.body}
-                      {'  '}
+                    </ThemedText>
+                    <View style={styles.metaFloating}>
                       <ThemedText style={[styles.metaInline, { color: mine ? '#F0E8FF' : theme.textSecondary }]}>
                         {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </ThemedText>
                       {mine && (item.status === 'sent' || item.status === 'sending') && (
-                        <>
-                          {' '}
-                          <MessageTick read={Boolean(item.read_at)} />
-                        </>
+                        <MessageTick read={Boolean(item.read_at)} />
                       )}
-                    </ThemedText>
+                    </View>
                   </View>
                   {item.status === 'sending' && (
                     <ThemedText type="small" themeColor="textSecondary">
@@ -262,7 +294,7 @@ export default function ConversationScreen() {
                 onSubmitEditing={handleSend}
                 multiline
                 maxLength={10000}
-                style={{ maxHeight: 120 }}
+                style={{ maxHeight: 120, textAlignVertical: 'top' }}
               />
             </View>
             <ActionButton label="Send message" glyph="↑" disabled={!draft.trim()} onPress={() => { void handleSend(); }} />
@@ -281,15 +313,33 @@ const styles = StyleSheet.create({
   bubbleRow: { alignItems: 'flex-start', gap: 2 },
   bubbleRowMine: { alignItems: 'flex-end' },
   bubble: {
+    position: 'relative',
     maxWidth: '80%',
     borderRadius: 22,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
   },
   bubbleTextMine: { color: '#fff' },
+  // Reserves room in the bottom-right corner for the floating time/tick overlay.
+  bubbleTextPad: { paddingRight: 46, paddingBottom: 2 },
+  metaFloating: {
+    position: 'absolute',
+    right: 10,
+    bottom: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   metaInline: { fontSize: 10 },
-  tick: { fontSize: 10, color: 'rgba(255,255,255,0.7)' },
-  tickRead: { color: '#7CD4FF' },
+  tickWrap: { width: 16, height: 12, alignItems: 'center', justifyContent: 'center' },
+  tick: { fontSize: 11, fontWeight: '700' },
+  tickRing: {
+    position: 'absolute',
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#7CD4FF',
+  },
   typingRow: { height: 20, paddingHorizontal: Spacing.three },
   composer: {
     flexDirection: 'row',

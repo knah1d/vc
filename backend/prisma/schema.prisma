@@ -21,6 +21,7 @@ model User {
   callsAsCaller    Call[] @relation("CallCaller")
   callsAsCallee    Call[] @relation("CallCallee")
   deviceTokens     DeviceToken[]
+  reactions        MessageReaction[]
 }
 
 // One row per device that has registered for push (e.g. an Expo push token
@@ -65,8 +66,23 @@ model Message {
   // send (e.g. after a dropped ack on a flaky mobile connection) be recognized
   // as the same message instead of creating a duplicate.
   clientId       String?      @unique
+  reactions      MessageReaction[]
 
   @@index([conversationId, createdAt])
+}
+
+// One reaction per user per message — reacting again with a different emoji
+// replaces it, reacting with the same emoji again removes it (toggle).
+model MessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  emoji     String
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, userId])
 }
 
 enum CallStatus {
