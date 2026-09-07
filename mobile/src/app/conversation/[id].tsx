@@ -17,6 +17,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { FormInput } from '@/components/form';
+import { GlassSurface } from '@/components/glass';
 import { ThemedText } from '@/components/themed-text';
 import { AmbientScreen, ActionButton, Avatar } from '@/components/mobile-ui';
 import { Spacing } from '@/constants/theme';
@@ -377,7 +378,7 @@ export default function ConversationScreen() {
 
           <Modal visible={reactingTo !== null} transparent animationType="fade" onRequestClose={() => setReactingTo(null)}>
             <Pressable style={styles.reactionBackdrop} onPress={() => setReactingTo(null)}>
-              <View style={[styles.reactionSheet, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+              <GlassSurface style={styles.reactionSheet} intensity={60}>
                 {QUICK_REACTIONS.map((emoji) => (
                   <Pressable
                     key={emoji}
@@ -388,7 +389,7 @@ export default function ConversationScreen() {
                     <ThemedText style={styles.reactionOptionText}>{emoji}</ThemedText>
                   </Pressable>
                 ))}
-              </View>
+              </GlassSurface>
             </Pressable>
           </Modal>
 
@@ -404,7 +405,7 @@ export default function ConversationScreen() {
           {!connected && <ThemedText style={{ textAlign: 'center', fontSize: 12, color: theme.textSecondary }}>Offline · Your messages will send when you reconnect</ThemedText>}
           <View style={styles.composer}>
             <ActionButton label="Attach a photo or file" glyph="+" disabled={uploading} onPress={() => setAttachSheetOpen(true)} />
-            <View style={styles.composerInput}>
+            <GlassSurface style={styles.composerInput} radius={20}>
               <FormInput
                 placeholder="Type a message"
                 value={draft}
@@ -412,15 +413,15 @@ export default function ConversationScreen() {
                 onSubmitEditing={handleSend}
                 multiline
                 maxLength={10000}
-                style={{ maxHeight: 120, textAlignVertical: 'top' }}
+                style={{ maxHeight: 120, textAlignVertical: 'top', backgroundColor: 'transparent', borderWidth: 0 }}
               />
-            </View>
+            </GlassSurface>
             <ActionButton label="Send message" glyph="↑" disabled={!draft.trim()} onPress={() => { void handleSend(); }} />
           </View>
 
           <Modal visible={attachSheetOpen} transparent animationType="fade" onRequestClose={() => setAttachSheetOpen(false)}>
             <Pressable style={styles.reactionBackdrop} onPress={() => setAttachSheetOpen(false)}>
-              <View style={[styles.attachSheet, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+              <GlassSurface style={styles.attachSheet} intensity={60}>
                 <Pressable style={styles.attachOption} onPress={() => { void pickPhoto(false); }}>
                   <ThemedText style={styles.attachOptionIcon}>🖼️</ThemedText>
                   <ThemedText>Photo library</ThemedText>
@@ -433,7 +434,7 @@ export default function ConversationScreen() {
                   <ThemedText style={styles.attachOptionIcon}>📎</ThemedText>
                   <ThemedText>File</ThemedText>
                 </Pressable>
-              </View>
+              </GlassSurface>
             </Pressable>
           </Modal>
         </SafeAreaView>
@@ -469,8 +470,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 24,
     padding: 12,
-    borderRadius: 24,
-    borderWidth: StyleSheet.hairlineWidth,
   },
   reactionOption: { padding: 6 },
   reactionOptionText: { fontSize: 28 },
@@ -478,8 +477,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 24,
     padding: 8,
-    borderRadius: 24,
-    borderWidth: StyleSheet.hairlineWidth,
   },
   attachOption: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14 },
   attachOptionIcon: { fontSize: 22 },

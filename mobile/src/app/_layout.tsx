@@ -6,6 +6,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme } from 'react-native';
 
 import { CallOverlay } from '@/components/CallOverlay';
+import { GlassHeaderBackground } from '@/components/glass';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { CallsProvider } from '@/context/CallsContext';
 import { initSentry, Sentry } from '@/lib/sentry';
@@ -50,7 +51,15 @@ function RootNavigator() {
   if (isLoading) return null;
 
   const stack = (
-    <Stack screenOptions={{ headerShown: false, headerStyle: { backgroundColor: theme.background }, headerTintColor: theme.text, headerShadowVisible: false, contentStyle: { backgroundColor: theme.background } }}>
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        headerTintColor: theme.text,
+        headerShadowVisible: false,
+        headerBackground: () => <GlassHeaderBackground />,
+        contentStyle: { backgroundColor: theme.background },
+      }}
+    >
       <Stack.Protected guard={!user}>
         <Stack.Screen name="(auth)" />
       </Stack.Protected>

@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { GlassSurface } from '@/components/glass';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import type { CallMode } from '@/lib/calls';
@@ -110,22 +111,26 @@ function CallStage({ mode, otherName, onLeave }: Pick<CallScreenProps, 'mode' | 
           accessibilityRole="button"
           accessibilityLabel={isMicrophoneEnabled ? 'Mute microphone' : 'Unmute microphone'}
           onPress={() => { void localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled).catch((error) => Alert.alert('Microphone', callError(error))); }}
-          style={[styles.controlButton, !isMicrophoneEnabled && styles.controlButtonOff]}
         >
-          <Text style={styles.controlLabel}>{isMicrophoneEnabled ? 'Mute' : 'Unmute'}</Text>
+          <GlassSurface intensity={35} radius={24} style={[styles.controlButton, !isMicrophoneEnabled && styles.controlButtonOff]}>
+            <Text style={styles.controlLabel}>{isMicrophoneEnabled ? 'Mute' : 'Unmute'}</Text>
+          </GlassSurface>
         </Pressable>
         {mode === 'video' && (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={isCameraEnabled ? 'Turn camera off' : 'Turn camera on'}
             onPress={() => { void localParticipant.setCameraEnabled(!isCameraEnabled).catch((error) => Alert.alert('Camera', callError(error))); }}
-            style={[styles.controlButton, !isCameraEnabled && styles.controlButtonOff]}
           >
-            <Text style={styles.controlLabel}>{isCameraEnabled ? 'Cam off' : 'Cam on'}</Text>
+            <GlassSurface intensity={35} radius={24} style={[styles.controlButton, !isCameraEnabled && styles.controlButtonOff]}>
+              <Text style={styles.controlLabel}>{isCameraEnabled ? 'Cam off' : 'Cam on'}</Text>
+            </GlassSurface>
           </Pressable>
         )}
-        <Pressable accessibilityRole="button" accessibilityLabel="End call" onPress={onLeave} style={[styles.controlButton, styles.hangup]}>
-          <Text style={styles.controlLabel}>End</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="End call" onPress={onLeave}>
+          <View style={[styles.controlButton, styles.hangup]}>
+            <Text style={styles.controlLabel}>End</Text>
+          </View>
         </Pressable>
       </View>
     </View>
@@ -209,13 +214,11 @@ const styles = StyleSheet.create({
   controlButton: {
     width: 72,
     height: 64,
-    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
   },
-  controlButtonOff: { backgroundColor: 'rgba(255,255,255,0.35)' },
-  hangup: { backgroundColor: '#C4423B' },
+  controlButtonOff: { borderColor: 'rgba(255,196,0,0.6)', borderWidth: 1.5 },
+  hangup: { backgroundColor: '#C4423B', borderRadius: 24 },
   controlIcon: { fontSize: 24 },
   controlLabel: { color: '#fff', fontSize: 13, fontWeight: '700' },
 });

@@ -1,6 +1,7 @@
 import type { PropsWithChildren } from 'react';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { ThemedText } from './themed-text';
+import { GlassSurface } from './glass';
 import { useTheme } from '@/hooks/use-theme';
 import { SymbolView } from 'expo-symbols';
 
@@ -16,8 +17,11 @@ export function AmbientScreen({ children }: PropsWithChildren) {
 }
 
 export function GlassCard({ children, style }: PropsWithChildren<{ style?: StyleProp<ViewStyle> }>) {
-  const theme = useTheme();
-  return <View style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.border }, style]}>{children}</View>;
+  return (
+    <GlassSurface intensity={35} radius={26} style={style}>
+      {children}
+    </GlassSurface>
+  );
 }
 
 export function Avatar({ name, size = 52 }: { name: string; size?: number }) {
@@ -30,24 +34,36 @@ export function Avatar({ name, size = 52 }: { name: string; size?: number }) {
 
 export function ActionButton({ label, glyph, onPress, disabled, testID }: { label: string; glyph: string; onPress: () => void; disabled?: boolean; testID?: string }) {
   const theme = useTheme();
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled }} disabled={disabled} testID={testID} onPress={onPress} style={({ pressed }) => ({ minWidth: 46, minHeight: 46, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.backgroundSelected, opacity: disabled ? 0.4 : pressed ? 0.65 : 1 })}>
-    <SymbolView
-      name={
-        glyph === '☎'
-          ? { ios: 'phone', android: 'call', web: 'call' }
-          : glyph === '▣'
-            ? { ios: 'video', android: 'videocam', web: 'videocam' }
-            : glyph === '+'
-              ? { ios: 'plus', android: 'add', web: 'add' }
-              : { ios: 'arrow.up', android: 'arrow_upward', web: 'arrow_upward' }
-      }
-      tintColor={theme.tint}
-      size={22}
-    />
-  </Pressable>;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled }}
+      disabled={disabled}
+      testID={testID}
+      onPress={onPress}
+      style={({ pressed }) => ({ opacity: disabled ? 0.4 : pressed ? 0.65 : 1 })}
+    >
+      <GlassSurface intensity={45} radius={17} style={styles.actionButton}>
+        <SymbolView
+          name={
+            glyph === '☎'
+              ? { ios: 'phone', android: 'call', web: 'call' }
+              : glyph === '▣'
+                ? { ios: 'video', android: 'videocam', web: 'videocam' }
+                : glyph === '+'
+                  ? { ios: 'plus', android: 'add', web: 'add' }
+                  : { ios: 'arrow.up', android: 'arrow_upward', web: 'arrow_upward' }
+          }
+          tintColor={theme.tint}
+          size={22}
+        />
+      </GlassSurface>
+    </Pressable>
+  );
 }
 
 const styles = StyleSheet.create({
   orb: { position: 'absolute', width: 370, height: 370, borderRadius: 190, opacity: 0.09 },
-  card: { borderRadius: 26, borderWidth: 1, padding: 20, boxShadow: '0px 8px 28px rgba(40, 25, 65, 0.05)' },
+  actionButton: { minWidth: 46, minHeight: 46, alignItems: 'center', justifyContent: 'center' },
 });

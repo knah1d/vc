@@ -4,6 +4,7 @@ import { AppState, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FormInput, PrimaryButton } from '@/components/form';
+import { GlassSurface } from '@/components/glass';
 import { ThemedText } from '@/components/themed-text';
 import { AmbientScreen, Avatar, GlassCard } from '@/components/mobile-ui';
 import { Spacing } from '@/constants/theme';
@@ -148,16 +149,18 @@ export default function ChatsScreen() {
               }
               accessibilityRole="button"
               accessibilityLabel={`Chat with ${item.other_name}${item.unread_count ? `, ${item.unread_count} unread messages` : ''}`}
-              style={({ pressed }) => [styles.row, { borderColor: theme.border, backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement }]}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
             >
-              <Avatar name={item.other_name} />
-              <View style={{ flex: 1, gap: 4 }}><ThemedText numberOfLines={1} style={styles.rowName}>{item.other_name}</ThemedText><ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>{item.unread_count ? 'New messages are waiting' : 'Message, call, stay close'}</ThemedText></View>
-              {item.unread_count > 0 && (
-                <View style={[styles.badge, { backgroundColor: theme.tint }]}>
-                  <ThemedText style={styles.badgeText}>{item.unread_count}</ThemedText>
-                </View>
-              )}
-              {!item.unread_count && <ThemedText themeColor="textSecondary">›</ThemedText>}
+              <GlassSurface intensity={30} radius={24} style={styles.row}>
+                <Avatar name={item.other_name} />
+                <View style={{ flex: 1, gap: 4 }}><ThemedText numberOfLines={1} style={styles.rowName}>{item.other_name}</ThemedText><ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>{item.unread_count ? 'New messages are waiting' : 'Message, call, stay close'}</ThemedText></View>
+                {item.unread_count > 0 && (
+                  <View style={[styles.badge, { backgroundColor: theme.tint }]}>
+                    <ThemedText style={styles.badgeText}>{item.unread_count}</ThemedText>
+                  </View>
+                )}
+                {!item.unread_count && <ThemedText themeColor="textSecondary">›</ThemedText>}
+              </GlassSurface>
             </Pressable>
           )}
           ListEmptyComponent={
@@ -192,8 +195,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
-    borderRadius: 24,
-    borderWidth: 1,
     gap: 14,
   },
   rowName: { fontSize: 16, fontWeight: '700' },

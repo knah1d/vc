@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { GlassSurface } from '@/components/glass';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useCallsContext } from '@/context/CallsContext';
 import { useTheme } from '@/hooks/use-theme';
@@ -45,7 +45,7 @@ export function CallOverlay() {
     return (
       <Modal visible transparent animationType="fade" onRequestClose={() => calls.close()}>
         <View style={styles.backdrop}>
-          <ThemedView style={[styles.card, { borderColor: theme.border }]}>
+          <GlassSurface intensity={55} radius={32} style={styles.card}>
             <ActivityIndicator />
             <ThemedText style={styles.cardText}>
               Getting your call ready. Allow microphone or camera access when prompted.
@@ -53,7 +53,7 @@ export function CallOverlay() {
             <Pressable onPress={() => calls.close()}>
               <ThemedText themeColor="danger">Cancel</ThemedText>
             </Pressable>
-          </ThemedView>
+          </GlassSurface>
         </View>
       </Modal>
     );
@@ -88,7 +88,7 @@ export function CallOverlay() {
     <Modal visible transparent animationType="fade" onRequestClose={() => phase === 'incoming' ? calls.decline() : calls.close()}>
       <View style={styles.backdrop}>
         <SafeAreaView style={{ width: '100%', alignItems: 'center' }}>
-          <ThemedView style={[styles.card, { borderColor: theme.border }]}>
+          <GlassSurface intensity={55} radius={32} style={styles.card}>
             <Avatar name={otherName} size={88} />
             <ThemedText type="subtitle" style={styles.cardText}>
               {otherName}
@@ -115,7 +115,7 @@ export function CallOverlay() {
                 </Pressable>
               )}
             </View>
-          </ThemedView>
+          </GlassSurface>
         </SafeAreaView>
       </View>
     </Modal>
@@ -132,8 +132,6 @@ const styles = StyleSheet.create({
   card: {
     width: '85%',
     maxWidth: 360,
-    borderRadius: 32,
-    borderWidth: StyleSheet.hairlineWidth,
     padding: Spacing.five,
     alignItems: 'center',
     gap: Spacing.three,
