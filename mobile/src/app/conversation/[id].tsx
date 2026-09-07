@@ -3,11 +3,12 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AppState, FlatList, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, AppState, FlatList, Linking, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
   interpolateColor,
+  useAnimatedKeyboard,
   useAnimatedStyle,
   useSharedValue,
   withSequence,
@@ -81,6 +82,12 @@ export default function ConversationScreen() {
   const listRef = useRef<FlatList<LocalMessage>>(null);
   const typingStopTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const wasTypingRef = useRef(false);
+  // Modern Android's edge-to-edge display mode silently breaks the legacy
+  // KeyboardAvoidingView/adjustResize approach — the OS reports the keyboard
+  // inset correctly, it just stops auto-resizing the window for it. Reading
+  // that inset directly and applying it ourselves works on both platforms.
+  const keyboard = useAnimatedKeyboard({ isStatusBarTranslucentAndroid: true, isNavigationBarTranslucentAndroid: true });
+  const keyboardPad = useAnimatedStyle(() => ({ paddingBottom: keyboard.height.value }));
 
   function markRead() {
     api.markRead(id!).catch(() => {});
@@ -280,15 +287,7 @@ export default function ConversationScreen() {
           ),
         }}
       />
-      {/* Android already resizes the window natively (app.json's
-          softwareKeyboardLayoutMode: "resize") — wrapping in KeyboardAvoidingView's
-          own padding/height behavior on top of that double-compensates and breaks
-          the layout. Only iOS needs the manual behavior. */}
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.select({ ios: 90, default: 0 })}
-      >
+      <Animated.View style={[styles.flex, keyboardPad]}>
         <SafeAreaView style={styles.flex} edges={['bottom']}>
           <FlatList
             ref={listRef}
@@ -403,7 +402,7 @@ export default function ConversationScreen() {
 
           {uploading && <ThemedText style={{ textAlign: 'center', fontSize: 12, color: theme.textSecondary }}>Uploading…</ThemedText>}
           {!connected && <ThemedText style={{ textAlign: 'center', fontSize: 12, color: theme.textSecondary }}>Offline · Your messages will send when you reconnect</ThemedText>}
-          <View style={[styles.composer, { borderTopColor: theme.border, backgroundColor: theme.backgroundElement }]}>
+          <View style={styles.composer}>
             <ActionButton label="Attach a photo or file" glyph="+" disabled={uploading} onPress={() => setAttachSheetOpen(true)} />
             <View style={styles.composerInput}>
               <FormInput
@@ -438,7 +437,7 @@ export default function ConversationScreen() {
             </Pressable>
           </Modal>
         </SafeAreaView>
-      </KeyboardAvoidingView>
+      </Animated.View>
     </AmbientScreen>
   );
 }
@@ -535,8 +534,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     gap: Spacing.two,
     padding: Spacing.three,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderRadius: 26,
+    backgroundColor: 'transparent',
     marginHorizontal: 8,
     marginBottom: 8,
   },
