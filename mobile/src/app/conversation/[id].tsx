@@ -1,6 +1,6 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, AppState, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FormInput } from '@/components/form';
@@ -16,6 +16,28 @@ import { localMessage, sendMessage, subscribeOutbox } from '@/lib/outbox';
 import { getSocket } from '@/lib/socket';
 
 const TYPING_STOP_DELAY_MS = 2000;
+
+// Single check = sent, double check = read. Pops in with a small scale+fade
+// the moment a message flips to "read" — not on initial render of an already-
+// read message loaded from history.
+function MessageTick({ read }: { read: boolean }) {
+  const pop = useRef(new Animated.Value(1)).current;
+  const wasRead = useRef(read);
+
+  useEffect(() => {
+    if (read && !wasRead.current) {
+      pop.setValue(0.5);
+      Animated.spring(pop, { toValue: 1, useNativeDriver: true, friction: 5, tension: 120 }).start();
+    }
+    wasRead.current = read;
+  }, [read, pop]);
+
+  return (
+    <Animated.Text style={[styles.tick, read && styles.tickRead, { transform: [{ scale: pop }] }]}>
+      {read ? '✓✓' : '✓'}
+    </Animated.Text>
+  );
+}
 
 export default function ConversationScreen() {
   const { id, name } = useLocalSearchParams<{ id: string; name?: string }>();
@@ -82,8 +104,14 @@ export default function ConversationScreen() {
     function onTyping({ conversationId, isTyping }: { conversationId: string; isTyping: boolean }) {
       if (conversationId === id) setOtherTyping(isTyping);
     }
+    async function onMessageRead({ conversationId, readAt }: { conversationId: string; readAt: string }) {
+      if (conversationId !== id || !user) return;
+      await db.markSentMessagesRead(id, user.id, readAt);
+      if (!cancelled) setMessages(await db.listMessages(id));
+    }
     socket.on('message:new', onNewMessage);
     socket.on('typing', onTyping);
+    socket.on('message:read', onMessageRead);
     function reconnect() { setConnected(true); void load(); }
     function disconnect() { setConnected(false); setOtherTyping(false); }
     socket.on('connect', reconnect);
@@ -94,6 +122,7 @@ export default function ConversationScreen() {
       unsubscribeOutbox();
       socket.off('message:new', onNewMessage);
       socket.off('typing', onTyping);
+      socket.off('message:read', onMessageRead);
       socket.off('connect', reconnect);
       socket.off('disconnect', disconnect);
       foreground.remove();
@@ -127,6 +156,7 @@ export default function ConversationScreen() {
       body: m.body,
       created_at: m.createdAt,
       status: 'sent',
+      read_at: m.readAt ?? null,
     };
   }
 
@@ -162,7 +192,7 @@ export default function ConversationScreen() {
       />
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.select({ ios: 90, default: 0 })}
       >
         <SafeAreaView style={styles.flex} edges={['bottom']}>
@@ -184,8 +214,22 @@ export default function ConversationScreen() {
                       { backgroundColor: mine ? theme.tint : theme.backgroundElement, borderBottomRightRadius: mine ? 6 : 22, borderBottomLeftRadius: mine ? 22 : 6 },
                     ]}
                   >
-                    <ThemedText style={mine ? styles.bubbleTextMine : undefined}>{item.body}</ThemedText>
-                    <ThemedText style={{ fontSize: 10, alignSelf: 'flex-end', marginTop: 5, color: mine ? '#F0E8FF' : theme.textSecondary }}>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{mine && item.status === 'sent' ? '  ✓' : ''}</ThemedText>
+                    {/* Nesting the time/tick as inline Text (not a separate row) lets them
+                        sit right after the last word, wrapping onto their own line only
+                        when there's no room — the standard chat-bubble look. */}
+                    <ThemedText style={mine ? styles.bubbleTextMine : undefined}>
+                      {item.body}
+                      {'  '}
+                      <ThemedText style={[styles.metaInline, { color: mine ? '#F0E8FF' : theme.textSecondary }]}>
+                        {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </ThemedText>
+                      {mine && (item.status === 'sent' || item.status === 'sending') && (
+                        <>
+                          {' '}
+                          <MessageTick read={Boolean(item.read_at)} />
+                        </>
+                      )}
+                    </ThemedText>
                   </View>
                   {item.status === 'sending' && (
                     <ThemedText type="small" themeColor="textSecondary">
@@ -243,6 +287,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.two,
   },
   bubbleTextMine: { color: '#fff' },
+  metaInline: { fontSize: 10 },
+  tick: { fontSize: 10, color: 'rgba(255,255,255,0.7)' },
+  tickRead: { color: '#7CD4FF' },
   typingRow: { height: 20, paddingHorizontal: Spacing.three },
   composer: {
     flexDirection: 'row',

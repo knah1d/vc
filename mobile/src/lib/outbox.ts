@@ -89,5 +89,6 @@ export function localMessage(conversationId: string, senderId: string, body: str
     body,
     created_at: new Date().toISOString(),
     status: 'sending',
+    read_at: null,
   };
 }

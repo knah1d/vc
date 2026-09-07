@@ -100,10 +100,18 @@ conversationsRouter.post("/:id/read", async (req: AuthedRequest, res) => {
     return res.status(404).json({ error: "Conversation not found" });
   }
 
-  await prisma.message.updateMany({
+  const readAt = new Date();
+  const { count } = await prisma.message.updateMany({
     where: { conversationId: conversation.id, senderId: { not: req.userId }, readAt: null },
-    data: { readAt: new Date() },
+    data: { readAt },
   });
+
+  // Tell whoever sent those messages so their tick can flip to "read" live —
+  // matches the "conversation:new" pattern already used for new conversations.
+  if (count > 0) {
+    const otherId = conversation.userAId === req.userId ? conversation.userBId : conversation.userAId;
+    req.app.get("io")?.to(`user:${otherId}`).emit("message:read", { conversationId: conversation.id, readAt: readAt.toISOString() });
+  }
 
   res.json({ ok: true });
 });

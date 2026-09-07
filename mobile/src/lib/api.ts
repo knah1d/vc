@@ -50,6 +50,7 @@ export interface RemoteMessage {
   senderId: string;
   body: string;
   createdAt: string;
+  readAt?: string | null;
 }
 
 export const api = {

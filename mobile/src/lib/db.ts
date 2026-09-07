@@ -12,6 +12,7 @@ export interface LocalMessage {
   body: string;
   created_at: string;
   status: MessageStatus;
+  read_at: string | null;
 }
 
 export interface LocalConversation {
@@ -45,6 +46,13 @@ async function openDb(userId: string) {
     );
     CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at);
   `);
+  // SQLite has no "ADD COLUMN IF NOT EXISTS" — installs from before read
+  // receipts existed won't have this column yet, so add it defensively.
+  try {
+    await database.execAsync(`ALTER TABLE messages ADD COLUMN read_at TEXT`);
+  } catch {
+    // Already present.
+  }
   return database;
 }
 
@@ -88,12 +96,13 @@ export function dbForUser(userId: string) {
     const database = await getDb();
     for (const m of messages) {
       await database.runAsync(
-        `INSERT INTO messages (client_id, server_id, conversation_id, sender_id, body, created_at, status)
-         VALUES ($client_id, $server_id, $conversation_id, $sender_id, $body, $created_at, $status)
+        `INSERT INTO messages (client_id, server_id, conversation_id, sender_id, body, created_at, status, read_at)
+         VALUES ($client_id, $server_id, $conversation_id, $sender_id, $body, $created_at, $status, $read_at)
          ON CONFLICT(client_id) DO UPDATE SET
            server_id = excluded.server_id,
            created_at = excluded.created_at,
-           status = excluded.status`,
+           status = excluded.status,
+           read_at = COALESCE(excluded.read_at, read_at)`,
         {
           $client_id: m.client_id,
           $server_id: m.server_id,
@@ -102,6 +111,7 @@ export function dbForUser(userId: string) {
           $body: m.body,
           $created_at: m.created_at,
           $status: m.status,
+          $read_at: m.read_at,
         }
       );
     }
@@ -135,6 +145,17 @@ export function dbForUser(userId: string) {
   async markConversationRead(conversationId: string) {
     const database = await getDb();
     await database.runAsync(`UPDATE conversations SET unread_count = 0 WHERE id = $id`, { $id: conversationId });
+  },
+
+  // The server tells us (via the "message:read" socket event) that the other
+  // side has read everything we've sent in this conversation up to now.
+  async markSentMessagesRead(conversationId: string, senderId: string, readAt: string) {
+    const database = await getDb();
+    await database.runAsync(
+      `UPDATE messages SET read_at = $read_at
+       WHERE conversation_id = $conversation_id AND sender_id = $sender_id AND read_at IS NULL`,
+      { $conversation_id: conversationId, $sender_id: senderId, $read_at: readAt }
+    );
   },
   };
 }
