@@ -1,17 +1,23 @@
-import { ActivityIndicator, Pressable, StyleSheet, TextInput, type TextInputProps } from 'react-native';
+import { ActivityIndicator, StyleSheet, TextInput, type TextInputProps } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { LiftPressable } from './motion';
+import { useState } from 'react';
 
-export function FormInput({ style, ...props }: TextInputProps) {
+export function FormInput({ style, onFocus, onBlur, ...props }: TextInputProps) {
   const theme = useTheme();
+  const [focused, setFocused] = useState(false);
   return (
     <TextInput
       placeholderTextColor={theme.textSecondary}
+      selectionColor={theme.tint}
+      onFocus={(event) => { setFocused(true); onFocus?.(event); }}
+      onBlur={(event) => { setFocused(false); onBlur?.(event); }}
       style={[
         styles.input,
-        { borderColor: theme.border, color: theme.text, backgroundColor: theme.backgroundElement },
+        { borderColor: focused ? theme.tint : theme.border, color: theme.text, backgroundColor: theme.backgroundElement },
         style,
       ]}
       {...props}
@@ -32,18 +38,18 @@ export function PrimaryButton({
 }) {
   const theme = useTheme();
   return (
-    <Pressable
+    <LiftPressable
       accessibilityRole="button"
       accessibilityState={{ disabled: !!(disabled || loading), busy: !!loading }}
       onPress={onPress}
       disabled={disabled || loading}
-      style={({ pressed }) => [
+      style={[
         styles.button,
-        { backgroundColor: theme.tint, opacity: disabled || loading ? 0.6 : pressed ? 0.85 : 1 },
+        { backgroundColor: theme.accent, borderColor: theme.tint, borderWidth: 1, opacity: disabled || loading ? 0.6 : 1 },
       ]}
     >
       {loading ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.buttonText}>{title}</ThemedText>}
-    </Pressable>
+    </LiftPressable>
   );
 }
 

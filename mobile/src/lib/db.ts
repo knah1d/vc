@@ -36,6 +36,8 @@ export function parseReactions(raw: string | null | undefined): MessageReaction[
 }
 
 export interface LocalConversation {
+  last_body?: string | null;
+  last_attachment?: string | null;
   id: string;
   other_id: string;
   other_name: string;
@@ -120,7 +122,11 @@ export function dbForUser(userId: string) {
   async listConversations(): Promise<LocalConversation[]> {
     const database = await getDb();
     return database.getAllAsync<LocalConversation>(
-      `SELECT * FROM conversations ORDER BY created_at DESC`
+      `SELECT c.*,
+        (SELECT body FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) AS last_body,
+        (SELECT attachment_type FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) AS last_attachment
+       FROM conversations c
+       ORDER BY COALESCE((SELECT created_at FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1), c.created_at) DESC`
     );
   },
 

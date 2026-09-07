@@ -9,7 +9,8 @@ import { useCallsContext } from '@/context/CallsContext';
 import { useTheme } from '@/hooks/use-theme';
 import { dbForUser } from '@/lib/db';
 import { useAuth } from '@/context/AuthContext';
-import { Avatar } from './mobile-ui';
+import { OrbitEmblem } from './mobile-ui';
+import { LiftPressable, Reveal } from './motion';
 
 import { CallScreen } from './CallScreen';
 
@@ -87,9 +88,10 @@ export function CallOverlay() {
   return (
     <Modal visible transparent animationType="fade" onRequestClose={() => phase === 'incoming' ? calls.decline() : calls.close()}>
       <View style={styles.backdrop}>
-        <SafeAreaView style={{ width: '100%', alignItems: 'center' }}>
+        <SafeAreaView style={{ width: '100%', flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 32 }}>
+          <Reveal style={{ width: '100%', alignItems: 'center', gap: 24 }}>
+          <OrbitEmblem name={otherName} size={110} />
           <GlassSurface intensity={55} radius={32} style={styles.card}>
-            <Avatar name={otherName} size={88} />
             <ThemedText type="subtitle" style={styles.cardText}>
               {otherName}
             </ThemedText>
@@ -99,23 +101,24 @@ export function CallOverlay() {
             <View style={styles.actions}>
               {phase === 'incoming' ? (
                 <>
-                  <Pressable
+                  <LiftPressable accessibilityRole="button" accessibilityLabel="Decline call"
                     onPress={calls.decline}
                     style={[styles.button, { backgroundColor: theme.danger }]}
                   >
                     <ThemedText style={styles.buttonText}>Decline</ThemedText>
-                  </Pressable>
-                  <Pressable onPress={() => calls.accept()} style={[styles.button, { backgroundColor: theme.tint }]}>
+                  </LiftPressable>
+                  <LiftPressable accessibilityRole="button" accessibilityLabel="Accept call" onPress={() => calls.accept()} style={[styles.button, { backgroundColor: theme.accent }]}>
                     <ThemedText style={styles.buttonText}>Accept</ThemedText>
-                  </Pressable>
+                  </LiftPressable>
                 </>
               ) : (
-                <Pressable onPress={() => calls.close()} style={[styles.button, { backgroundColor: theme.danger }]}>
+                <LiftPressable accessibilityRole="button" accessibilityLabel="Cancel call" onPress={() => calls.close()} style={[styles.button, { backgroundColor: theme.danger }]}>
                   <ThemedText style={styles.buttonText}>Cancel call</ThemedText>
-                </Pressable>
+                </LiftPressable>
               )}
             </View>
           </GlassSurface>
+          </Reveal>
         </SafeAreaView>
       </View>
     </Modal>
@@ -125,7 +128,7 @@ export function CallOverlay() {
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(17,12,33,0.78)',
+    backgroundColor: 'rgba(7,11,29,0.96)',
     alignItems: 'center',
     justifyContent: 'center',
   },

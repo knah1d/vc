@@ -30,10 +30,10 @@ export default function SignupScreen() {
   }
 
   return (
-    <AuthShell title="Your circle starts here." subtitle="Make a little room for the people who matter.">
+    <AuthShell title="Create account">
 
           <FormInput
-            placeholder="What should we call you?"
+            placeholder="Name"
             autoComplete="name"
             maxLength={60}
             value={displayName}
@@ -66,7 +66,7 @@ export default function SignupScreen() {
 
           <Link href="/(auth)/login" style={styles.link}>
             <ThemedText themeColor="textSecondary">
-              Already part of the circle? <ThemedText themeColor="tint">Log in</ThemedText>
+              Already have an account? <ThemedText themeColor="tint">Log in</ThemedText>
             </ThemedText>
           </Link>
     </AuthShell>

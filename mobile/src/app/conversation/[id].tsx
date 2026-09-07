@@ -2,9 +2,11 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { Stack, useLocalSearchParams } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AppState, FlatList, Linking, Modal, Pressable, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Alert, AppState, FlatList, Keyboard, Linking, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { EmojiPicker } from '@/components/emoji-picker';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
   interpolateColor,
@@ -19,7 +21,8 @@ import Animated, {
 import { FormInput } from '@/components/form';
 import { GlassSurface } from '@/components/glass';
 import { ThemedText } from '@/components/themed-text';
-import { AmbientScreen, ActionButton, Avatar } from '@/components/mobile-ui';
+import { AmbientScreen, ActionButton, Avatar, TypingIndicator } from '@/components/mobile-ui';
+import { LiftPressable, Reveal, useMotionAllowed } from '@/components/motion';
 import { Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { useCallsContext } from '@/context/CallsContext';
@@ -40,12 +43,17 @@ const QUICK_REACTIONS = ['❤️', '😂', '😮', '😢', '👍', '🙏'];
 // after the message like Telegram/WhatsApp — that rules out an Animated.View
 // ring effect here, since React Native can't nest a View inside Text.
 function MessageTick({ read, mine }: { read: boolean; mine: boolean }) {
+  const motion = useMotionAllowed();
+  const theme = useTheme();
   const colorProgress = useSharedValue(read ? 1 : 0);
   const scale = useSharedValue(1);
   const wasRead = useRef(read);
 
   useEffect(() => {
-    if (read && !wasRead.current) {
+    if (!motion) {
+      colorProgress.value = read ? 1 : 0;
+      scale.value = 1;
+    } else if (read && !wasRead.current) {
       colorProgress.value = withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) });
       scale.value = withSequence(
         withTiming(1.55, { duration: 160, easing: Easing.out(Easing.quad) }),
@@ -56,11 +64,11 @@ function MessageTick({ read, mine }: { read: boolean; mine: boolean }) {
       scale.value = 1;
     }
     wasRead.current = read;
-  }, [read, colorProgress, scale]);
+  }, [read, motion, colorProgress, scale]);
 
   const tickStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
-    color: interpolateColor(colorProgress.value, [0, 1], [mine ? 'rgba(255,255,255,0.7)' : '#9C9C9C', '#7CD4FF']),
+    color: interpolateColor(colorProgress.value, [0, 1], [mine ? 'rgba(255,255,255,0.7)' : '#9C9C9C', theme.glow]),
   }));
 
   return <Animated.Text style={[styles.tick, tickStyle]}>{read ? ' ✓✓' : ' ✓'}</Animated.Text>;
@@ -75,6 +83,9 @@ export default function ConversationScreen() {
   const callDisabled = Boolean(calls.call) || calls.preparing;
   const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [draft, setDraft] = useState('');
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const cursor = useRef({ start: 0, end: 0 });
+  const [insertSelection, setInsertSelection] = useState<{ start: number; end: number } | undefined>();
   const [otherTyping, setOtherTyping] = useState(false);
   const [connected, setConnected] = useState(getSocket().connected);
   const [reactingTo, setReactingTo] = useState<string | null>(null);
@@ -88,7 +99,11 @@ export default function ConversationScreen() {
   // inset correctly, it just stops auto-resizing the window for it. Reading
   // that inset directly and applying it ourselves works on both platforms.
   const keyboard = useAnimatedKeyboard({ isStatusBarTranslucentAndroid: true, isNavigationBarTranslucentAndroid: true });
-  const keyboardPad = useAnimatedStyle(() => ({ paddingBottom: keyboard.height.value }));
+  const insets = useSafeAreaInsets();
+  // The keyboard replaces the bottom safe area; it must not be added to it.
+  const keyboardPad = useAnimatedStyle(() => ({
+    paddingBottom: keyboard.height.value > 0 ? Math.max(keyboard.height.value, insets.bottom) : insets.bottom + 8,
+  }));
 
   function markRead() {
     api.markRead(id!).catch(() => {});
@@ -289,29 +304,29 @@ export default function ConversationScreen() {
         }}
       />
       <Animated.View style={[styles.flex, keyboardPad]}>
-        <SafeAreaView style={styles.flex} edges={['bottom']}>
+        <View style={styles.flex}>
           <FlatList
             ref={listRef}
             style={styles.flex}
             data={messages}
             keyExtractor={(item) => item.client_id}
             contentContainerStyle={styles.list}
-            ListHeaderComponent={<ThemedText style={{ textAlign: 'center', fontSize: 11, letterSpacing: 2, color: theme.textSecondary, marginVertical: 16 }}>A LITTLE CLOSER, EVERY MESSAGE</ThemedText>}
-            ListEmptyComponent={<View style={{ alignItems: 'center', padding: 32, gap: 16 }}><Avatar name={name || 'Chat'} size={72} /><ThemedText type="subtitle">Say hello.</ThemedText><ThemedText themeColor="textSecondary" style={{ textAlign: 'center' }}>Good conversations start with a little something.</ThemedText></View>}
+            ListEmptyComponent={<View style={{ alignItems: 'center', padding: 32 }}><Avatar name={name || 'Chat'} size={64} /></View>}
             onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
             renderItem={({ item }) => {
               const mine = item.sender_id === user?.id;
               const reactions = parseReactions(item.reactions);
               const distinctEmoji = [...new Set(reactions.map((r) => r.emoji))];
               return (
-                <View style={[styles.bubbleRow, mine && styles.bubbleRowMine]}>
-                  <Pressable
+                <Reveal style={[styles.bubbleRow, mine && styles.bubbleRowMine]}>
+                  <LiftPressable
                     disabled={!item.server_id}
                     onLongPress={() => item.server_id && setReactingTo(item.server_id)}
                     delayLongPress={220}
                     style={[
                       styles.bubble,
-                      { backgroundColor: mine ? theme.tint : theme.backgroundElement, borderBottomRightRadius: mine ? 6 : 22, borderBottomLeftRadius: mine ? 22 : 6 },
+                      { backgroundColor: mine ? theme.accent : theme.backgroundElement, borderColor: mine ? theme.tint : theme.border, borderBottomRightRadius: mine ? 7 : 24, borderBottomLeftRadius: mine ? 24 : 7 },
+                      reactingTo === item.server_id && item.server_id !== null && { borderColor: '#85E7DE', boxShadow: '0px 6px 24px rgba(112,81,203,0.3)' },
                     ]}
                   >
                     {item.attachment_type === 'image' && item.attachment_url && (
@@ -322,7 +337,7 @@ export default function ConversationScreen() {
                         onPress={() => Linking.openURL(item.attachment_url!)}
                         style={[styles.filePill, { borderColor: mine ? 'rgba(255,255,255,0.4)' : theme.border }]}
                       >
-                        <ThemedText style={mine ? styles.bubbleTextMine : undefined}>📎</ThemedText>
+                        <SymbolView name={{ ios: 'paperclip', android: 'attach_file' }} tintColor={mine ? '#FFFFFF' : theme.tint} size={20} />
                         <ThemedText numberOfLines={1} style={[styles.fileName, mine ? styles.bubbleTextMine : undefined]}>
                           {item.attachment_name ?? 'File'}
                         </ThemedText>
@@ -340,7 +355,7 @@ export default function ConversationScreen() {
                         <ThemedText style={[styles.metaInline, { color: mine ? '#F0E8FF' : theme.textSecondary }]}>
                           {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </ThemedText>
-                        {mine && (item.status === 'sent' || item.status === 'sending') && (
+                        {mine && item.status === 'sent' && (
                           <MessageTick read={Boolean(item.read_at)} mine={mine} />
                         )}
                       </ThemedText>
@@ -349,7 +364,7 @@ export default function ConversationScreen() {
                         <ThemedText style={[styles.metaInline, { color: '#fff' }]}>
                           {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </ThemedText>
-                        {mine && (item.status === 'sent' || item.status === 'sending') && (
+                        {mine && item.status === 'sent' && (
                           <MessageTick read={Boolean(item.read_at)} mine />
                         )}
                       </View>
@@ -362,7 +377,7 @@ export default function ConversationScreen() {
                         </ThemedText>
                       </View>
                     )}
-                  </Pressable>
+                  </LiftPressable>
                   {item.status === 'sending' && (
                     <ThemedText type="small" themeColor="textSecondary">
                       Sending…
@@ -371,44 +386,46 @@ export default function ConversationScreen() {
                   {item.status === 'failed' && (
                     <Pressable accessibilityRole="button" accessibilityLabel="Retry sending message" onPress={async () => { if (!user) return; await sendMessage(user.id, id, item.client_id, item.body); setMessages(await db.listMessages(id)); }} style={{ padding: 8 }}><ThemedText type="small" style={{ color: theme.danger }}>Not sent · Tap to retry</ThemedText></Pressable>
                   )}
-                </View>
+                </Reveal>
               );
             }}
           />
 
           <Modal visible={reactingTo !== null} transparent animationType="fade" onRequestClose={() => setReactingTo(null)}>
             <Pressable style={styles.reactionBackdrop} onPress={() => setReactingTo(null)}>
-              <GlassSurface style={styles.reactionSheet} intensity={60}>
+              <Reveal><View style={{ paddingHorizontal: 24, paddingBottom: 14 }}><ThemedText numberOfLines={2} style={{ color: '#fff', fontSize: 16 }}>{messages.find((message) => message.server_id === reactingTo)?.body || 'Attachment'}</ThemedText></View><GlassSurface style={styles.reactionSheet} intensity={60}>
                 {QUICK_REACTIONS.map((emoji) => (
-                  <Pressable
+                  <LiftPressable
                     key={emoji}
+                    accessibilityRole="button"
+                    accessibilityLabel={`React with ${emoji}`}
                     hitSlop={6}
                     onPress={() => reactingTo && reactTo(reactingTo, emoji)}
                     style={styles.reactionOption}
                   >
                     <ThemedText style={styles.reactionOptionText}>{emoji}</ThemedText>
-                  </Pressable>
+                  </LiftPressable>
                 ))}
-              </GlassSurface>
+              </GlassSurface></Reveal>
             </Pressable>
           </Modal>
 
-          <View style={styles.typingRow}>
+          <View style={[styles.typingRow, !otherTyping && { height: 8 }]}>
             {otherTyping && (
-              <ThemedText type="small" themeColor="textSecondary">
-                {name ? `${name} is typing…` : 'Typing…'}
-              </ThemedText>
+              <TypingIndicator name={name || 'Your contact'} />
             )}
           </View>
 
           {uploading && <ThemedText style={{ textAlign: 'center', fontSize: 12, color: theme.textSecondary }}>Uploading…</ThemedText>}
           {!connected && <ThemedText style={{ textAlign: 'center', fontSize: 12, color: theme.textSecondary }}>Offline · Your messages will send when you reconnect</ThemedText>}
-          <View style={styles.composer}>
+          <GlassSurface radius={28} intensity={45} style={styles.composer}>
             <ActionButton label="Attach a photo or file" glyph="+" disabled={uploading} onPress={() => setAttachSheetOpen(true)} />
             <GlassSurface style={styles.composerInput} radius={20}>
               <FormInput
-                placeholder="Type a message"
+                placeholder="Message"
                 value={draft}
+                selection={insertSelection}
+                onSelectionChange={event => { if (!emojiOpen) { cursor.current = event.nativeEvent.selection; setInsertSelection(undefined); } }}
                 onChangeText={handleDraftChange}
                 onSubmitEditing={handleSend}
                 multiline
@@ -416,28 +433,35 @@ export default function ConversationScreen() {
                 style={{ maxHeight: 120, textAlignVertical: 'top', backgroundColor: 'transparent', borderWidth: 0 }}
               />
             </GlassSurface>
+            <ActionButton label="Emoji" glyph="☺" onPress={() => { Keyboard.dismiss(); setEmojiOpen(true); }} />
             <ActionButton label="Send message" glyph="↑" disabled={!draft.trim()} onPress={() => { void handleSend(); }} />
-          </View>
+          </GlassSurface>
+          {emojiOpen && <EmojiPicker onClose={() => setEmojiOpen(false)} onPick={emoji => {
+            const start = Math.min(cursor.current.start, draft.length); const end = Math.min(cursor.current.end, draft.length);
+            const next = draft.slice(0, start) + emoji + draft.slice(end);
+            if (next.length > 10000) return;
+            handleDraftChange(next); cursor.current = { start: start + emoji.length, end: start + emoji.length }; setInsertSelection(cursor.current);
+          }} />}
 
           <Modal visible={attachSheetOpen} transparent animationType="fade" onRequestClose={() => setAttachSheetOpen(false)}>
             <Pressable style={styles.reactionBackdrop} onPress={() => setAttachSheetOpen(false)}>
               <GlassSurface style={styles.attachSheet} intensity={60}>
                 <Pressable style={styles.attachOption} onPress={() => { void pickPhoto(false); }}>
-                  <ThemedText style={styles.attachOptionIcon}>🖼️</ThemedText>
+                  <SymbolView name={{ ios: 'photo', android: 'image' }} tintColor={theme.tint} size={22} />
                   <ThemedText>Photo library</ThemedText>
                 </Pressable>
                 <Pressable style={styles.attachOption} onPress={() => { void pickPhoto(true); }}>
-                  <ThemedText style={styles.attachOptionIcon}>📸</ThemedText>
+                  <SymbolView name={{ ios: 'camera', android: 'photo_camera' }} tintColor={theme.tint} size={22} />
                   <ThemedText>Camera</ThemedText>
                 </Pressable>
                 <Pressable style={styles.attachOption} onPress={() => { void pickFile(); }}>
-                  <ThemedText style={styles.attachOptionIcon}>📎</ThemedText>
+                  <SymbolView name={{ ios: 'doc', android: 'description' }} tintColor={theme.tint} size={22} />
                   <ThemedText>File</ThemedText>
                 </Pressable>
               </GlassSurface>
             </Pressable>
           </Modal>
-        </SafeAreaView>
+        </View>
       </Animated.View>
     </AmbientScreen>
   );
@@ -448,7 +472,7 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', gap: 6 },
   headerIcon: { fontSize: 20 },
   list: { padding: Spacing.three, gap: Spacing.two },
-  bubbleRow: { alignItems: 'flex-start', gap: 2, marginBottom: 6 },
+  bubbleRow: { alignItems: 'flex-start', gap: 2, marginBottom: 10 },
   bubbleRowMine: { alignItems: 'flex-end' },
   reactionPill: {
     position: 'absolute',
@@ -462,7 +486,7 @@ const styles = StyleSheet.create({
   reactionBackdrop: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: 'rgba(7,10,27,0.72)',
   },
   reactionSheet: {
     flexDirection: 'row',
@@ -502,7 +526,8 @@ const styles = StyleSheet.create({
   bubble: {
     position: 'relative',
     maxWidth: '80%',
-    borderRadius: 22,
+    borderRadius: 24,
+    borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
   },
@@ -525,15 +550,14 @@ const styles = StyleSheet.create({
   },
   metaInline: { fontSize: 10 },
   tick: { fontSize: 11, fontWeight: '700' },
-  typingRow: { height: 20, paddingHorizontal: Spacing.three },
+  typingRow: { height: 28, paddingHorizontal: 26, justifyContent: 'center' },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: Spacing.two,
-    padding: Spacing.three,
-    backgroundColor: 'transparent',
-    marginHorizontal: 8,
-    marginBottom: 8,
+    padding: 8,
+    marginHorizontal: 12,
+    marginBottom: 0,
   },
   composerInput: { flex: 1 },
   sendButton: { fontWeight: '600', paddingBottom: Spacing.two + 4 },

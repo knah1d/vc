@@ -10,15 +10,20 @@ import {
   useTracks,
 } from '@livekit/react-native';
 import { ConnectionState, Track } from 'livekit-client';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, PanResponder, StyleSheet, Text, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import { SymbolView } from 'expo-symbols';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useTheme } from '@/hooks/use-theme';
 import { GlassSurface } from '@/components/glass';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import type { CallMode } from '@/lib/calls';
 import { callError } from '@/lib/calls';
+import { OrbitEmblem } from './mobile-ui';
+import { LiftPressable, Reveal, useMotionAllowed } from './motion';
 
 interface CallScreenProps {
   token: string;
@@ -47,6 +52,32 @@ function CallStage({ mode, otherName, onLeave }: Pick<CallScreenProps, 'mode' | 
   const remoteTrackRef = cameraTracks.find((t) => !t.participant.isLocal);
   const [pipExpanded, setPipExpanded] = useState(false);
   const [seconds, setSeconds] = useState(0);
+  const [level, setLevel] = useState(0);
+  const motion = useMotionAllowed();
+  const theme = useTheme();
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
+  const pipX = useSharedValue(0);
+  const pipY = useSharedValue(0);
+  const dragStart = useRef({ x: 0, y: 0 });
+  const pipMotion = useAnimatedStyle(() => ({ transform: [{ translateX: pipX.value }, { translateY: pipY.value }] }));
+  const pipGesture = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dx) + Math.abs(gesture.dy) > 8,
+    onPanResponderGrant: () => { dragStart.current = { x: pipX.value, y: pipY.value }; },
+    onPanResponderMove: (_event, gesture) => {
+      const width = pipExpanded ? stageSize.width * 0.55 : 90;
+      const height = pipExpanded ? stageSize.height * 0.45 : 130;
+      pipX.value = Math.max(Math.min(0, -stageSize.width + width + 32), Math.min(0, dragStart.current.x + gesture.dx));
+      pipY.value = Math.max(Math.min(0, -stageSize.height + height + 32), Math.min(0, dragStart.current.y + gesture.dy));
+    },
+  }), [pipExpanded, stageSize, pipX, pipY]);
+
+  useEffect(() => {
+    if (!motion || mode !== 'voice') { setLevel(0); return; }
+    const sample = setInterval(() => {
+      setLevel(Math.max(0, ...room.activeSpeakers.map((participant) => participant.audioLevel)));
+    }, 180);
+    return () => clearInterval(sample);
+  }, [motion, mode, room]);
 
   const together = connection === ConnectionState.Connected && participants.length > 0;
 
@@ -66,22 +97,19 @@ function CallStage({ mode, otherName, onLeave }: Pick<CallScreenProps, 'mode' | 
 
   return (
     <View style={styles.stageFlex}>
-      <View style={styles.statusRow}>
-        <ThemedText style={styles.statusText}>{status}</ThemedText>
-      </View>
+      <View style={styles.statusRow}><GlassSurface radius={20} style={{ paddingHorizontal: 20, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: together ? theme.glow : theme.tint }} /><ThemedText style={[styles.statusText, { color: theme.text }]}>{status}</ThemedText>
+      </GlassSurface></View>
 
       {mode === 'voice' ? (
         <View style={styles.voiceStage}>
-          <View style={styles.avatarRing}>
-            <Text style={styles.avatarInitial}>{otherName.trim().charAt(0).toUpperCase() || '?'}</Text>
-          </View>
-          <ThemedText type="subtitle" style={styles.voiceName}>
+          <OrbitEmblem name={otherName} size={130} level={level} />
+          <ThemedText type="subtitle" style={[styles.voiceName, { color: theme.text }]}>
             {otherName}
           </ThemedText>
-          <ThemedText style={{ color: '#B6ACC9' }}>Just the two of you. All ears.</ThemedText>
         </View>
       ) : (
-        <View style={styles.videoStage}>
+        <View style={styles.videoStage} onLayout={(event) => setStageSize(event.nativeEvent.layout)}>
           {remoteTrackRef && isTrackReference(remoteTrackRef) ? (
             <VideoTrack trackRef={remoteTrackRef} style={styles.fill} objectFit="cover" />
           ) : (
@@ -92,52 +120,54 @@ function CallStage({ mode, otherName, onLeave }: Pick<CallScreenProps, 'mode' | 
             </View>
           )}
           {localTrackRef && (
-            <Pressable
-              onPress={() => setPipExpanded((v) => !v)}
-              style={[styles.pip, pipExpanded ? styles.pipExpanded : styles.pipSmall]}
-            >
+            <Animated.View {...pipGesture.panHandlers} style={[styles.pip, pipExpanded ? styles.pipExpanded : styles.pipSmall, pipMotion]}>
+            <LiftPressable accessibilityRole="button" accessibilityLabel="Resize self preview. Drag to move." onPress={() => { setPipExpanded((v) => !v); pipX.value = motion ? withSpring(0) : 0; pipY.value = motion ? withSpring(0) : 0; }} style={styles.fill}>
               {isTrackReference(localTrackRef) ? (
                 <VideoTrack trackRef={localTrackRef} style={styles.fill} objectFit="cover" mirror />
               ) : (
                 <View style={styles.pipCameraOff} />
               )}
-            </Pressable>
+            </LiftPressable></Animated.View>
           )}
         </View>
       )}
 
-      <View style={styles.controls}>
-        <Pressable
+      <Reveal style={styles.controls}>
+        <LiftPressable
           accessibilityRole="button"
           accessibilityLabel={isMicrophoneEnabled ? 'Mute microphone' : 'Unmute microphone'}
           onPress={() => { void localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled).catch((error) => Alert.alert('Microphone', callError(error))); }}
         >
           <GlassSurface intensity={35} radius={24} style={[styles.controlButton, !isMicrophoneEnabled && styles.controlButtonOff]}>
-            <Text style={styles.controlLabel}>{isMicrophoneEnabled ? 'Mute' : 'Unmute'}</Text>
+            <SymbolView name={isMicrophoneEnabled ? { ios: 'mic', android: 'mic' } : { ios: 'mic.slash', android: 'mic_off' }} tintColor={theme.tint} size={22} />
+            <Text style={[styles.controlLabel, { color: theme.text }]}>{isMicrophoneEnabled ? 'Mute' : 'Unmute'}</Text>
           </GlassSurface>
-        </Pressable>
+        </LiftPressable>
         {mode === 'video' && (
-          <Pressable
+          <LiftPressable
             accessibilityRole="button"
             accessibilityLabel={isCameraEnabled ? 'Turn camera off' : 'Turn camera on'}
             onPress={() => { void localParticipant.setCameraEnabled(!isCameraEnabled).catch((error) => Alert.alert('Camera', callError(error))); }}
           >
             <GlassSurface intensity={35} radius={24} style={[styles.controlButton, !isCameraEnabled && styles.controlButtonOff]}>
-              <Text style={styles.controlLabel}>{isCameraEnabled ? 'Cam off' : 'Cam on'}</Text>
+              <SymbolView name={isCameraEnabled ? { ios: 'video', android: 'videocam' } : { ios: 'video.slash', android: 'videocam_off' }} tintColor={theme.tint} size={22} />
+              <Text style={[styles.controlLabel, { color: theme.text }]}>{isCameraEnabled ? 'Cam off' : 'Cam on'}</Text>
             </GlassSurface>
-          </Pressable>
+          </LiftPressable>
         )}
-        <Pressable accessibilityRole="button" accessibilityLabel="End call" onPress={onLeave}>
+        <LiftPressable accessibilityRole="button" accessibilityLabel="End call" onPress={onLeave}>
           <View style={[styles.controlButton, styles.hangup]}>
+            <SymbolView name={{ ios: 'phone.down.fill', android: 'call_end' }} tintColor="#FFFFFF" size={24} />
             <Text style={styles.controlLabel}>End</Text>
           </View>
-        </Pressable>
-      </View>
+        </LiftPressable>
+      </Reveal>
     </View>
   );
 }
 
 export function CallScreen({ token, serverUrl, mode, otherName, onLeave, onError }: CallScreenProps) {
+  const theme = useTheme();
   const [audioReady, setAudioReady] = useState(false);
   useEffect(() => {
     let active = true;
@@ -150,8 +180,8 @@ export function CallScreen({ token, serverUrl, mode, otherName, onLeave, onError
   }, []);
 
   return (
-    <SafeAreaView style={styles.root}>
-      {!audioReady ? <ActivityIndicator color="#C6AEFF" style={{ flex: 1 }} /> :
+    <SafeAreaView style={[styles.root, { backgroundColor: theme.background }]}>
+      {!audioReady ? <ActivityIndicator color={theme.tint} style={{ flex: 1 }} /> :
       <LiveKitRoom
         serverUrl={serverUrl}
         token={token}
@@ -171,7 +201,7 @@ export function CallScreen({ token, serverUrl, mode, otherName, onLeave, onError
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#171224' },
+  root: { flex: 1, backgroundColor: '#0B1024' },
   stageFlex: { flex: 1 },
   statusRow: { alignItems: 'center', paddingVertical: Spacing.three },
   statusText: { color: '#fff', fontSize: 13 },
@@ -189,7 +219,7 @@ const styles = StyleSheet.create({
   },
   avatarInitial: { color: '#fff', fontSize: 36, fontWeight: '600' },
   voiceName: { color: '#fff' },
-  videoStage: { flex: 1, backgroundColor: '#000' },
+  videoStage: { flex: 1, backgroundColor: '#10162D', marginHorizontal: 12, borderRadius: 28, overflow: 'hidden' },
   fill: { width: '100%', height: '100%' },
   videoPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   placeholderText: { color: 'rgba(255,255,255,0.7)', fontSize: 13 },
@@ -197,7 +227,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: Spacing.three,
     bottom: Spacing.three,
-    borderRadius: 12,
+    borderRadius: 22,
     overflow: 'hidden',
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.8)',
@@ -213,7 +243,8 @@ const styles = StyleSheet.create({
   },
   controlButton: {
     width: 72,
-    height: 64,
+    height: 76,
+    gap: 5,
     alignItems: 'center',
     justifyContent: 'center',
   },

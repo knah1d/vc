@@ -3,7 +3,7 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider, router } from 'expo-rout
 import * as Notifications from 'expo-notifications';
 import { useEffect } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
+import { AppearanceProvider, useAppearance } from '@/context/AppearanceContext';
 
 import { CallOverlay } from '@/components/CallOverlay';
 import { GlassHeaderBackground } from '@/components/glass';
@@ -12,6 +12,7 @@ import { CallsProvider } from '@/context/CallsContext';
 import { initSentry, Sentry } from '@/lib/sentry';
 import { api } from '@/lib/api';
 import { useTheme } from '@/hooks/use-theme';
+import { MotionProvider, useMotionAllowed } from '@/components/motion';
 
 // Must run once before any LiveKit/WebRTC usage.
 registerGlobals();
@@ -22,6 +23,7 @@ SplashScreen.preventAutoHideAsync();
 function RootNavigator() {
   const { user, isLoading } = useAuth();
   const theme = useTheme();
+  const motion = useMotionAllowed();
 
   useEffect(() => {
     if (!isLoading) SplashScreen.hideAsync();
@@ -54,6 +56,7 @@ function RootNavigator() {
     <Stack
       screenOptions={{
         headerShown: false,
+        animation: motion ? 'slide_from_right' : 'none',
         headerTintColor: theme.text,
         headerShadowVisible: false,
         headerBackground: () => <GlassHeaderBackground />,
@@ -65,6 +68,7 @@ function RootNavigator() {
       </Stack.Protected>
       <Stack.Protected guard={!!user}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="appearance" options={{ headerShown: true, title: 'Appearance' }} />
         <Stack.Screen name="conversation/[id]" options={{ headerShown: true }} />
       </Stack.Protected>
     </Stack>
@@ -83,12 +87,15 @@ function RootNavigator() {
 }
 
 function RootLayout() {
-  const colorScheme = useColorScheme();
+  return <AppearanceProvider><AppLayout /></AppearanceProvider>;
+}
+function AppLayout() {
+  const { dark } = useAppearance();
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AuthProvider>
+    <ThemeProvider value={dark ? DarkTheme : DefaultTheme}>
+      <MotionProvider><AuthProvider>
         <RootNavigator />
-      </AuthProvider>
+      </AuthProvider></MotionProvider>
     </ThemeProvider>
   );
 }

@@ -2,7 +2,7 @@ import { BlurView } from 'expo-blur';
 import type { PropsWithChildren } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppearance } from '@/context/AppearanceContext';
 
 // The one recipe every "glass" surface in the app uses, so they all read as
 // one consistent material rather than a pile of one-off translucent panels.
@@ -16,17 +16,19 @@ export function GlassSurface({
   intensity = 40,
   radius = 24,
 }: PropsWithChildren<{ style?: StyleProp<ViewStyle>; intensity?: number; radius?: number }>) {
-  const scheme = useColorScheme();
+  const { dark, palette } = useAppearance();
+  const scheme = dark ? 'dark' : 'light';
   const tint = scheme === 'dark' ? 'dark' : 'light';
 
   return (
-    <View style={[styles.clip, { borderRadius: radius }, style]}>
+    <View style={[styles.clip, { borderRadius: radius, backgroundColor: palette.backgroundElement, borderColor: palette.border }, style]}>
       <BlurView
         intensity={intensity}
         tint={tint}
         blurMethod="dimezisBlurViewSdk31Plus"
         style={StyleSheet.absoluteFill}
       />
+      <View pointerEvents="none" style={[styles.highlight, { backgroundColor: scheme === 'dark' ? 'rgba(210,222,255,0.18)' : 'rgba(255,255,255,0.95)' }]} />
       {children}
     </View>
   );
@@ -36,7 +38,8 @@ export function GlassSurface({
 // just a hairline at the very bottom (matching how translucent nav bars read
 // on both platforms) instead of GlassSurface's all-around card border.
 export function GlassHeaderBackground() {
-  const scheme = useColorScheme();
+  const { dark } = useAppearance();
+  const scheme = dark ? 'dark' : 'light';
   const tint = scheme === 'dark' ? 'dark' : 'light';
   return (
     <View style={styles.headerClip}>
@@ -46,6 +49,7 @@ export function GlassHeaderBackground() {
 }
 
 const styles = StyleSheet.create({
+  highlight: { position: 'absolute', top: 0, left: '14%', right: '14%', height: 1 },
   clip: {
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,

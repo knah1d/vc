@@ -29,7 +29,7 @@ export default function LoginScreen() {
   }
 
   return (
-    <AuthShell title="Welcome back." subtitle="Your people are just a hello away.">
+    <AuthShell title="Log in" action={<PrimaryButton title="Log in" onPress={handleSubmit} loading={loading} disabled={!email || !password} />}>
 
           <FormInput
             placeholder="Email address"
@@ -49,7 +49,6 @@ export default function LoginScreen() {
 
           {error && <FormError message={error} />}
 
-          <PrimaryButton title="Log in" onPress={handleSubmit} loading={loading} disabled={!email || !password} />
 
           <Link href="/(auth)/signup" style={styles.link}>
             <ThemedText themeColor="textSecondary">

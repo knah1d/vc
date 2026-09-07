@@ -1,12 +1,13 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { AppState, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FormInput, PrimaryButton } from '@/components/form';
 import { GlassSurface } from '@/components/glass';
 import { ThemedText } from '@/components/themed-text';
-import { AmbientScreen, Avatar, GlassCard } from '@/components/mobile-ui';
+import { AmbientScreen, Avatar, GlassCard, ActionButton } from '@/components/mobile-ui';
+import { LiftPressable, Reveal } from '@/components/motion';
 import { Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/hooks/use-theme';
@@ -26,6 +27,8 @@ export default function ChatsScreen() {
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [offline, setOffline] = useState(false);
+  const [newChat, setNewChat] = useState(false);
+  const [unreadOnly, setUnreadOnly] = useState(false);
 
   const refresh = useCallback(async () => {
     // Cache-first: render whatever's on disk immediately, then reconcile with the server.
@@ -86,6 +89,7 @@ export default function ChatsScreen() {
     setStarting(true);
     try {
       const { conversation } = await api.startConversation(otherEmail.trim());
+      setNewChat(false);
       setOtherEmail('');
       await refresh();
       const created = (await db.listConversations()).find((c) => c.id === conversation.id);
@@ -104,69 +108,62 @@ export default function ChatsScreen() {
     <AmbientScreen>
       <SafeAreaView style={styles.flex}>
         <View style={styles.header}>
-          <View><ThemedText style={{ fontSize: 30, lineHeight: 38, fontWeight: '800', letterSpacing: -1.5 }}>hush.</ThemedText><ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>A little space for your people.</ThemedText></View>
-          <Pressable accessibilityRole="button" accessibilityLabel="Log out" onPress={() => { void logout().catch((err) => setError(err.message)); }} style={{ alignItems: 'center', gap: 4 }}>
+          <ThemedText style={{ fontSize: 30, lineHeight: 38, fontWeight: '800', letterSpacing: -1 }}>hush.</ThemedText>
+          <ActionButton label="Appearance" glyph="⚙" onPress={() => router.push('/appearance')} />
+          <LiftPressable accessibilityRole="button" accessibilityLabel="Log out" onPress={() => { void logout().catch((err) => setError(err.message)); }} style={{ alignItems: 'center', gap: 4 }}>
             <Avatar name={user?.displayName || 'You'} size={42} />
             <ThemedText themeColor="textSecondary" style={{ fontSize: 10 }}>Log out</ThemedText>
-          </Pressable>
+          </LiftPressable>
         </View>
-        <View style={{ paddingHorizontal: 24, gap: 6, marginBottom: 20 }}><ThemedText type="title">Your people</ThemedText><ThemedText themeColor="textSecondary">{offline ? 'Offline · Showing saved conversations' : `Hey ${user?.displayName?.split(' ')[0] || 'there'}, pick up where you left off.`}</ThemedText></View>
-        <View style={{ paddingHorizontal: 24, marginBottom: 16 }}><FormInput accessibilityLabel="Search conversations" placeholder="Search your conversations…" value={search} onChangeText={setSearch} /></View>
-        <GlassCard style={{ marginHorizontal: 24, marginBottom: 20, padding: 16, gap: 12 }}>
-        <ThemedText style={{ fontWeight: '700', fontSize: 13 }}>MAKE A NEW CONNECTION</ThemedText>
-        <View style={styles.startRow}>
-          <View style={styles.startInput}>
-            <FormInput
-              placeholder="Their email address"
-              autoCapitalize="none"
-              keyboardType="email-address"
-              value={otherEmail}
-              onChangeText={setOtherEmail}
-              onSubmitEditing={handleStartConversation}
-            />
-          </View>
-          <PrimaryButton title="Chat" onPress={handleStartConversation} loading={starting} disabled={!otherEmail.trim()} />
-        </View>
-        </GlassCard>
-        {error && (
-          <ThemedText role="alert" style={{ color: theme.danger, paddingHorizontal: Spacing.four }}>
-            {error}
-          </ThemedText>
-        )}
-
         <FlatList
-          data={conversations.filter((c) => c.other_name.toLowerCase().includes(search.toLowerCase()))}
+          data={conversations.filter((c) => c.other_name.toLowerCase().includes(search.toLowerCase()) && (!unreadOnly || c.unread_count > 0))}
           refreshing={refreshing}
           onRefresh={async () => { setRefreshing(true); try { await refresh(); } finally { setRefreshing(false); } }}
           keyboardShouldPersistTaps="handled"
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
-          ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-          renderItem={({ item }) => (
-            <Pressable
-              onPress={() =>
-                router.push({ pathname: '/conversation/[id]', params: { id: item.id, name: item.other_name } })
-              }
-              accessibilityRole="button"
-              accessibilityLabel={`Chat with ${item.other_name}${item.unread_count ? `, ${item.unread_count} unread messages` : ''}`}
-              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
-            >
-              <GlassSurface intensity={30} radius={24} style={styles.row}>
-                <Avatar name={item.other_name} />
-                <View style={{ flex: 1, gap: 4 }}><ThemedText numberOfLines={1} style={styles.rowName}>{item.other_name}</ThemedText><ThemedText themeColor="textSecondary" style={{ fontSize: 12 }}>{item.unread_count ? 'New messages are waiting' : 'Message, call, stay close'}</ThemedText></View>
-                {item.unread_count > 0 && (
-                  <View style={[styles.badge, { backgroundColor: theme.tint }]}>
-                    <ThemedText style={styles.badgeText}>{item.unread_count}</ThemedText>
+          ListHeaderComponent={<View style={{ gap: 20, marginBottom: 20 }}>
+            <FormInput accessibilityLabel="Search conversations" placeholder="Search" value={search} onChangeText={setSearch} />
+            {offline && <ThemedText themeColor="textSecondary">Offline</ThemedText>}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {['All chats', 'Unread'].map((label, index) => <LiftPressable key={label} accessibilityRole="button" accessibilityState={{ selected: unreadOnly === (index === 1) }} onPress={() => setUnreadOnly(index === 1)} style={{ borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: unreadOnly === (index === 1) ? theme.backgroundSelected : 'transparent' }}><ThemedText style={{ fontSize: 12, fontWeight: '700', color: unreadOnly === (index === 1) ? theme.text : theme.textSecondary }}>{label}</ThemedText></LiftPressable>)}
+              </View>
+              <ActionButton label="Start a new conversation" glyph="+" onPress={() => { setError(null); setNewChat(true); }} />
+            </View>
+            {error && !newChat && <ThemedText role="alert" themeColor="danger">{error}</ThemedText>}
+          </View>}
+          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+          renderItem={({ item, index }) => (
+            <Reveal delay={Math.min(index, 5) * 45}>
+              <LiftPressable onPress={() => router.push({ pathname: '/conversation/[id]', params: { id: item.id, name: item.other_name } })}
+                accessibilityRole="button" accessibilityLabel={`Chat with ${item.other_name}${item.unread_count ? `, ${item.unread_count} unread messages` : ''}`}>
+                <GlassSurface intensity={30} radius={25} style={[styles.row, item.unread_count > 0 && { borderColor: theme.tint }]}>
+                  <Avatar name={item.other_name} />
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <ThemedText numberOfLines={1} style={styles.rowName}>{item.other_name}</ThemedText>
+                    {(item.last_body || item.last_attachment) && <ThemedText numberOfLines={1} themeColor="textSecondary" style={{ fontSize: 13 }}>{item.last_body || (item.last_attachment === 'image' ? 'Photo' : 'File')}</ThemedText>}
                   </View>
-                )}
-                {!item.unread_count && <ThemedText themeColor="textSecondary">›</ThemedText>}
-              </GlassSurface>
-            </Pressable>
+                  {item.unread_count > 0 ? <View style={[styles.badge, { backgroundColor: theme.accent }]}><ThemedText style={styles.badgeText}>{item.unread_count > 99 ? '99+' : item.unread_count}</ThemedText></View> : <ThemedText themeColor="textSecondary">↗</ThemedText>}
+                </GlassSurface>
+              </LiftPressable>
+            </Reveal>
           )}
-          ListEmptyComponent={
-            <View style={{ alignItems: 'center', padding: 24, gap: 12 }}><Avatar name="h" size={76} /><ThemedText type="subtitle">{search ? 'No matches yet' : 'Good company starts here.'}</ThemedText><ThemedText themeColor="textSecondary" style={{ textAlign: 'center' }}>{search ? 'Try another name.' : 'Add someone by email. Send a hello. Make their day.'}</ThemedText></View>
-          }
+          ListEmptyComponent={<Reveal><GlassCard style={{ alignItems: 'center', gap: 12, paddingVertical: 28 }}>
+            <ThemedText type="subtitle">{search ? 'No results' : unreadOnly ? 'All caught up' : 'No chats yet'}</ThemedText>
+            {!search && !unreadOnly && <PrimaryButton title="New chat" onPress={() => setNewChat(true)} />}
+          </GlassCard></Reveal>}
         />
+        <Modal visible={newChat} transparent animationType="fade" onRequestClose={() => setNewChat(false)}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: 'rgba(7,10,27,0.7)' }}>
+            <GlassCard style={{ gap: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}><ThemedText type="subtitle">New chat</ThemedText><Pressable accessibilityRole="button" accessibilityLabel="Close new conversation" onPress={() => setNewChat(false)} style={{ padding: 12 }}><ThemedText>✕</ThemedText></Pressable></View>
+              <FormInput placeholder="Their email address" accessibilityLabel="Contact email" autoCapitalize="none" keyboardType="email-address" value={otherEmail} onChangeText={setOtherEmail} onSubmitEditing={handleStartConversation} />
+              {error && <ThemedText role="alert" themeColor="danger">{error}</ThemedText>}
+              <PrimaryButton title="Start conversation" onPress={handleStartConversation} loading={starting} disabled={!otherEmail.trim()} />
+            </GlassCard>
+          </KeyboardAvoidingView>
+        </Modal>
       </SafeAreaView>
     </AmbientScreen>
   );
