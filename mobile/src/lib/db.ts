@@ -4,6 +4,11 @@ import * as SQLite from 'expo-sqlite';
 // and messages composed offline sit here until they can be flushed to the server.
 export type MessageStatus = 'sending' | 'sent' | 'failed';
 
+export interface MessageReaction {
+  userId: string;
+  emoji: string;
+}
+
 export interface LocalMessage {
   client_id: string;
   server_id: string | null;
@@ -13,6 +18,18 @@ export interface LocalMessage {
   created_at: string;
   status: MessageStatus;
   read_at: string | null;
+  // Stored as a JSON string (SQLite has no array/JSON column type) — parse at
+  // the UI boundary via parseReactions() below.
+  reactions: string;
+}
+
+export function parseReactions(raw: string | null | undefined): MessageReaction[] {
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw) as MessageReaction[];
+  } catch {
+    return [];
+  }
 }
 
 export interface LocalConversation {
