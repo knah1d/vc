@@ -32,14 +32,14 @@ const TYPING_STOP_DELAY_MS = 2000;
 const QUICK_REACTIONS = ['❤️', '😂', '😮', '😢', '👍', '🙏'];
 
 // Single check = sent, double check = read. The moment a message flips to
-// "read" (not on initial render of an already-read history message): the
-// ticks bounce with a little overshoot, sweep from gray to accent color, and
-// a soft ring pulses outward behind them — a small "confirmed" flourish.
-function MessageTick({ read }: { read: boolean }) {
+// "read" (not on initial render of an already-read history message), the
+// ticks bounce with a little overshoot and sweep from gray to accent color.
+// Rendered as a nested Text (see the bubble below), so it flows inline right
+// after the message like Telegram/WhatsApp — that rules out an Animated.View
+// ring effect here, since React Native can't nest a View inside Text.
+function MessageTick({ read, mine }: { read: boolean; mine: boolean }) {
   const colorProgress = useSharedValue(read ? 1 : 0);
   const scale = useSharedValue(1);
-  const ringScale = useSharedValue(0);
-  const ringOpacity = useSharedValue(0);
   const wasRead = useRef(read);
 
   useEffect(() => {
@@ -49,32 +49,19 @@ function MessageTick({ read }: { read: boolean }) {
         withTiming(1.55, { duration: 160, easing: Easing.out(Easing.quad) }),
         withSpring(1, { damping: 6, stiffness: 180 })
       );
-      ringScale.value = 0.4;
-      ringOpacity.value = 0.5;
-      ringScale.value = withTiming(2.6, { duration: 500, easing: Easing.out(Easing.quad) });
-      ringOpacity.value = withTiming(0, { duration: 500 });
     } else if (!read) {
       colorProgress.value = 0;
       scale.value = 1;
     }
     wasRead.current = read;
-  }, [read, colorProgress, scale, ringScale, ringOpacity]);
+  }, [read, colorProgress, scale]);
 
   const tickStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
-    color: interpolateColor(colorProgress.value, [0, 1], ['rgba(255,255,255,0.7)', '#7CD4FF']),
-  }));
-  const ringStyle = useAnimatedStyle(() => ({
-    opacity: ringOpacity.value,
-    transform: [{ scale: ringScale.value }],
+    color: interpolateColor(colorProgress.value, [0, 1], [mine ? 'rgba(255,255,255,0.7)' : '#9C9C9C', '#7CD4FF']),
   }));
 
-  return (
-    <View style={styles.tickWrap}>
-      <Animated.View pointerEvents="none" style={[styles.tickRing, ringStyle]} />
-      <Animated.Text style={[styles.tick, tickStyle]}>{read ? '✓✓' : '✓'}</Animated.Text>
-    </View>
-  );
+  return <Animated.Text style={[styles.tick, tickStyle]}>{read ? ' ✓✓' : ' ✓'}</Animated.Text>;
 }
 
 export default function ConversationScreen() {
@@ -293,9 +280,13 @@ export default function ConversationScreen() {
           ),
         }}
       />
+      {/* Android already resizes the window natively (app.json's
+          softwareKeyboardLayoutMode: "resize") — wrapping in KeyboardAvoidingView's
+          own padding/height behavior on top of that double-compensates and breaks
+          the layout. Only iOS needs the manual behavior. */}
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior="padding"
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.select({ ios: 90, default: 0 })}
       >
         <SafeAreaView style={styles.flex} edges={['bottom']}>
@@ -337,22 +328,32 @@ export default function ConversationScreen() {
                         </ThemedText>
                       </Pressable>
                     )}
-                    {/* Reserve a little room after the text so the time/tick corner
-                        overlay (below) doesn't sit on top of the last word for
-                        typical message lengths — the standard chat-bubble look. */}
-                    {item.body.length > 0 && (
-                      <ThemedText style={[mine ? styles.bubbleTextMine : undefined, styles.bubbleTextPad]}>
+                    {/* Time/tick nested as inline Text (not a separate row) — Telegram's
+                        look: it flows right after the last word when the message is
+                        short, and wraps to its own line only when the text is long
+                        enough to need it. An image-only message has no text to attach
+                        to, so it keeps the small overlay chip on the photo instead. */}
+                    {item.body.length > 0 ? (
+                      <ThemedText style={mine ? styles.bubbleTextMine : undefined}>
                         {item.body}
+                        {'  '}
+                        <ThemedText style={[styles.metaInline, { color: mine ? '#F0E8FF' : theme.textSecondary }]}>
+                          {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </ThemedText>
+                        {mine && (item.status === 'sent' || item.status === 'sending') && (
+                          <MessageTick read={Boolean(item.read_at)} mine={mine} />
+                        )}
                       </ThemedText>
+                    ) : (
+                      <View style={[styles.metaFloating, item.attachment_type === 'image' && styles.metaFloatingOnImage]}>
+                        <ThemedText style={[styles.metaInline, { color: '#fff' }]}>
+                          {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </ThemedText>
+                        {mine && (item.status === 'sent' || item.status === 'sending') && (
+                          <MessageTick read={Boolean(item.read_at)} mine />
+                        )}
+                      </View>
                     )}
-                    <View style={[styles.metaFloating, item.attachment_type === 'image' && styles.metaFloatingOnImage]}>
-                      <ThemedText style={[styles.metaInline, { color: item.attachment_type === 'image' ? '#fff' : mine ? '#F0E8FF' : theme.textSecondary }]}>
-                        {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </ThemedText>
-                      {mine && (item.status === 'sent' || item.status === 'sending') && (
-                        <MessageTick read={Boolean(item.read_at)} />
-                      )}
-                    </View>
                     {distinctEmoji.length > 0 && (
                       <View style={[styles.reactionPill, { borderColor: theme.border, backgroundColor: theme.background }, mine ? { left: 6 } : { right: 6 }]}>
                         <ThemedText style={styles.reactionPillText}>
@@ -510,8 +511,8 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.two,
   },
   bubbleTextMine: { color: '#fff' },
-  // Reserves room in the bottom-right corner for the floating time/tick overlay.
-  bubbleTextPad: { paddingRight: 46, paddingBottom: 2 },
+  // Used only for an image-only message (no caption text to attach the meta
+  // to inline) — a small overlay chip in the photo's corner instead.
   metaFloating: {
     position: 'absolute',
     right: 10,
@@ -527,15 +528,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   metaInline: { fontSize: 10 },
-  tickWrap: { width: 16, height: 12, alignItems: 'center', justifyContent: 'center' },
   tick: { fontSize: 11, fontWeight: '700' },
-  tickRing: {
-    position: 'absolute',
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#7CD4FF',
-  },
   typingRow: { height: 20, paddingHorizontal: Spacing.three },
   composer: {
     flexDirection: 'row',
